@@ -1,6 +1,6 @@
 {
   "name": "agent-sesh",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Generate a standard .agents folder and AGENTS.md pointer in any agent-assisted project.",
   "main": "index.js",
   "bin": {
@@ -16,5 +16,13 @@
     "ai-coding"
   ],
   "author": "khizardevelops",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khizardevelops/agent-sesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/khizardevelops/agent-sesh/issues"
+  },
+  "homepage": "https://github.com/khizardevelops/agent-sesh#readme"
 }
