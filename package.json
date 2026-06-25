@@ -1,0 +1,20 @@
+{
+  "name": "agent-sesh",
+  "version": "1.0.1",
+  "description": "Generate a standard .agents folder and AGENTS.md pointer in any agent-assisted project.",
+  "main": "index.js",
+  "bin": {
+    "agent-sesh": "index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "keywords": [
+    "vibe-coding",
+    "vibecoding",
+    "agent-context",
+    "ai-coding"
+  ],
+  "author": "khizardevelops",
+  "license": "MIT"
+}
