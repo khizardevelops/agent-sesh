@@ -44,7 +44,8 @@ project/
     ├── roadmap.md
     ├── constraints.md
     ├── known-issues.md
-    └── glossary.md
+    ├── glossary.md
+    └── project_commands.md
 ```
 The package does not ship a prebuilt `.agents/` folder. These files are generated on the client's computer when `npx agent-sesh` runs.
 

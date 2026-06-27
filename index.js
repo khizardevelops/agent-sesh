@@ -11,6 +11,10 @@ const target = path.join(projectRoot, agentsDirName);
 const agentsFile = path.join(projectRoot, "AGENTS.md");
 const claudeFile = path.join(projectRoot, "CLAUDE.md");
 const yellow = "\x1b[33m";
+const blue = "\x1b[34m";
+const red = "\x1b[31m";
+const cyan = "\x1b[36m";
+const pink = "\x1b[35m";
 const reset = "\x1b[0m";
 
 const agentFiles = {
@@ -37,6 +41,7 @@ This folder is the project brain for AI agents working in this repository.
 - constraints.md: hard rules and limits.
 - known-issues.md: known bugs, fragile areas, and technical debt.
 - glossary.md: project-specific terms.
+- project_commands.md: project-specific command reference.
 `,
   "state.md": `# State
 
@@ -162,6 +167,26 @@ Define project-specific terms and domain language.
 
 ## Ambiguous Words
 `,
+  "project_commands.md": `# Project Commands
+
+Document the essential commands for working on this project. Keep this file updated as the project evolves.
+
+## Frontend
+
+## Backend
+
+<!--
+Feel free to add more and custom headings like:
+    ## Database
+    ## Testing
+    ## Build / Deploy
+    ## Linting / Formatting
+    ## Utility Scripts
+    ## Custom Workflows
+
+etc...
+-->
+`,
 };
 
 const agentsFileContent = `# Agent Instructions
@@ -221,6 +246,16 @@ Backups are **not** created when:
 - The pointer file matches the default agent-sesh template (either variant).
 - An identical backup already exists.
 `;
+
+function isAgentsDirectoryPopulated() {
+  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory())
+    return false;
+  const entries = fs.readdirSync(target);
+  const meaningful = entries.filter(
+    (e) => e !== "old_agent_files" && e !== "custom",
+  );
+  return meaningful.length > 0;
+}
 
 function getBackupDir(fileName) {
   const subdir = fileName === "CLAUDE.md" ? "claude" : "agents";
@@ -366,8 +401,7 @@ function runWithElevation(command, args) {
 function makeReadOnly(filePath) {
   try {
     fs.chmodSync(filePath, 0o444);
-  } catch {
-  }
+  } catch {}
 
   if (process.platform === "win32") {
     runQuiet("attrib", ["+R", filePath]);
@@ -379,8 +413,7 @@ function makeReadOnly(filePath) {
 function makeWritable(filePath) {
   try {
     fs.chmodSync(filePath, 0o644);
-  } catch {
-  }
+  } catch {}
 
   if (process.platform === "win32") {
     runQuiet("attrib", ["-R", filePath]);
@@ -429,10 +462,12 @@ function getMacFlags(filePath) {
   }
 
   try {
-    return childProcess.execFileSync("stat", ["-f", "%Sf", filePath], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    return childProcess
+      .execFileSync("stat", ["-f", "%Sf", filePath], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      .trim();
   } catch {
     return "";
   }
@@ -611,8 +646,10 @@ function ensureAgentsDirectory() {
 }
 
 function isDefaultTemplate(content) {
-  return content === getTemplateContent("AGENTS.md")
-      || content === getTemplateContent("CLAUDE.md");
+  return (
+    content === getTemplateContent("AGENTS.md") ||
+    content === getTemplateContent("CLAUDE.md")
+  );
 }
 
 function ensureAgentsFile(filePath, fileName) {
@@ -716,10 +753,16 @@ function printReport({
   console.log(
     `  .agents/    ${getAgentsDirectoryStatus(created, existing, total)}`,
   );
-  console.log(`  ${fileName.padEnd(11)} ${getAgentsFileStatus(agentsFileStatus)}`);
+  console.log(
+    `  ${fileName.padEnd(11)} ${getAgentsFileStatus(agentsFileStatus)}`,
+  );
   console.log(`  protection  ${getProtectionStatus(protectionStatus)}`);
 
-  if (agentsFileStatus !== "created" && agentsFileStatus !== "unchanged" && !agentsFileStatus.startsWith("migrated")) {
+  if (
+    agentsFileStatus !== "created" &&
+    agentsFileStatus !== "unchanged" &&
+    !agentsFileStatus.startsWith("migrated")
+  ) {
     console.log("");
     console.log(
       `${yellow}The existing ${fileName} content was preserved in ${agentsFileStatus}.${reset}`,
@@ -727,16 +770,20 @@ function printReport({
   }
 
   console.log("");
-  console.log(`${fileName} now directs agents to read .agents/ before working.`);
+  console.log(
+    `${fileName} now directs agents to read .agents/ before working.`,
+  );
   console.log("");
   console.log("How to use:");
   console.log("   │");
   console.log(`   ├─ Just tag @${fileName} before writing prompt`);
   console.log("   │");
-  console.log("   └─ To force a deep-dive, tag @.agents/ or @.agents/README.md");
+  console.log(
+    "   └─ To force a deep-dive, tag @.agents/ or @.agents/README.md",
+  );
 }
 
-function selectEnvironment() {
+function selectEnvironment(suppressReinit = false) {
   return new Promise((resolve) => {
     const args = process.argv.slice(2);
     if (args.includes("--uni")) {
@@ -763,98 +810,222 @@ Options:
       return;
     }
 
-    const agentsDirExists = fs.existsSync(target) && fs.statSync(target).isDirectory();
-    const agentsFileExists = fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
-    const claudeFileExists = fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+    const agentsDirExists =
+      fs.existsSync(target) && fs.statSync(target).isDirectory();
+    const agentsDirPopulated = agentsDirExists && isAgentsDirectoryPopulated();
+    const agentsFileExists =
+      fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
+    const claudeFileExists =
+      fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
     const isSwitch = agentsDirExists && (agentsFileExists || claudeFileExists);
+    const reinitMode = agentsDirPopulated && !suppressReinit;
 
-    const options = [
-      { name: "🟢 Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc…" , value: "universal" },
-      { name: "🟠 Claude Code (CLAUDE.md)", value: "claude" }
-    ];
+    const options = [];
+    if (reinitMode) {
+      options.push({ name: "REINIT", value: "reinit" });
+    }
+    options.push(
+      {
+        name: "\u{1F7E2} Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc\u2026",
+        value: "universal",
+      },
+      { name: "\u{1F7E0} Claude Code (CLAUDE.md)", value: "claude" },
+    );
 
-    const linesToMove = options.length;
     let selectedIndex = 0;
 
-    const pink = "\x1b[35m";
-    const rst = "\x1b[0m";
-
-    console.log("🧠 agent-sesh: Generating Project Brain...\n");
-    if (isSwitch) {
-      console.log(`❓ Which AI coding agent environment(s) do you want to ${pink}SWITCH${rst} to?`);
-    } else {
-      console.log(`❓ Which AI coding agent environment(s) do you want to ${pink}SETUP${rst}?`);
-    }
-
     function render() {
-      for (let i = 0; i < options.length; i++) {
-        const prefix = i === selectedIndex ? "❯ " : "  ";
-        const color = i === selectedIndex ? "\x1b[36m" : "";
-        process.stdout.write(`${prefix}${color}${options[i].name}\x1b[0m\n`);
+      process.stdout.write("\x1b[u\x1b[0J");
+
+      if (reinitMode) {
+        process.stdout.write(
+          "\u{1F9E0} agent-sesh: Generating Project Brain...\n\n",
+        );
+        process.stdout.write(
+          "\u{250C}\u{2500}\u{2500}{ \u2753 Want to reinitialise the current .agents folder? }\n",
+        );
+        process.stdout.write(
+          "\u{2502}   Don\u2019t worry \u2014 the contents of files in .agents will not be deleted.\n",
+        );
+        process.stdout.write("\u{2502}\n");
+
+        const reinitPrefix =
+          selectedIndex === 0
+            ? "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u276f"
+            : "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}";
+        process.stdout.write(
+          `\u{2502}${reinitPrefix} \x1b[34m\u{1F535} REINIT\x1b[0m\n`,
+        );
+
+        process.stdout.write("\u{2502}\n");
+        process.stdout.write(
+          "\u{2514}\u{2500}\u{2500}{ \u2753 Which AI coding agent environment do you want to SWITCH to? }\n",
+        );
+      } else {
+        process.stdout.write(
+          `\u2753 Which AI coding agent environment do you want to ${isSwitch ? "SWITCH to" : "IMPLEMENT"}?\n`,
+        );
+      }
+
+      const startIdx = reinitMode ? 1 : 0;
+      const lastIdx = options.length - 1;
+      for (let i = startIdx; i < options.length; i++) {
+        if (reinitMode) {
+          const isLast = i === lastIdx;
+          const branch = isLast ? "\u{2514}" : "\u{251C}";
+          const suffix =
+            i === selectedIndex ? "\u{2500}\u276f" : "\u{2500}\u{2500}";
+          process.stdout.write(`    ${branch}${suffix} ${options[i].name}\n`);
+        } else {
+          const prefix = i === selectedIndex ? "\u276f " : "  ";
+          process.stdout.write(`  ${prefix}${options[i].name}\n`);
+        }
       }
     }
+
+    process.stdout.write("\x1b[s");
+    render();
 
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
     process.stdin.resume();
 
-    render();
-
     function onKeypress(str, key) {
       if (key) {
-        if (key.ctrl && key.name === 'c') {
+        if (key.ctrl && key.name === "c") {
           process.stdin.setRawMode(false);
           process.exit();
-        } else if (key.name === 'up') {
+        } else if (key.name === "up") {
           selectedIndex = (selectedIndex - 1 + options.length) % options.length;
-          readline.moveCursor(process.stdout, 0, -linesToMove);
           render();
-        } else if (key.name === 'down') {
+        } else if (key.name === "down") {
           selectedIndex = (selectedIndex + 1) % options.length;
-          readline.moveCursor(process.stdout, 0, -linesToMove);
           render();
-        } else if (key.name === 'return' || key.name === 'enter') {
-          process.stdin.removeAllListeners('keypress');
-          process.stdin.removeAllListeners('data');
+        } else if (key.name === "return" || key.name === "enter") {
+          process.stdin.removeAllListeners("keypress");
           process.stdin.setRawMode(false);
           process.stdin.pause();
 
-          // Two-step TTY restoration after raw mode:
-          //
-          // 1. `stty sane` resets kernel TTY flags (ECHO, ICANON, ICRNL, etc.)
-          //    to sane defaults. Node's setRawMode(false) should do this, but
-          //    doesn't always fully restore all flags.
-          //
-          // 2. `tcflush(TCIFLUSH)` discards any stale bytes left in the kernel
-          //    input queue from raw mode (e.g. the \r\n from the Enter keypress).
-          //    Without this, sudo's getpass() reads stale bytes as empty passwords
-          //    and fails. stty sane does NOT flush input — only tcflush does.
-          if (process.platform !== 'win32') {
+          if (process.platform !== "win32") {
             try {
-              childProcess.execFileSync('stty', ['sane'], { stdio: 'inherit' });
-            } catch {
-              // best-effort
-            }
+              childProcess.execFileSync("stty", ["sane"], { stdio: "inherit" });
+            } catch {}
             try {
-              childProcess.execFileSync('python3', [
-                '-c',
-                'import termios; termios.tcflush(0, termios.TCIFLUSH)'
-              ], { stdio: ['inherit', 'ignore', 'ignore'] });
-            } catch {
-              // python3 may not be available; best-effort
-            }
+              childProcess.execFileSync(
+                "python3",
+                ["-c", "import termios; termios.tcflush(0, termios.TCIFLUSH)"],
+                { stdio: ["inherit", "ignore", "ignore"] },
+              );
+            } catch {}
           }
 
-          readline.moveCursor(process.stdout, 0, -linesToMove);
-          readline.clearScreenDown(process.stdout);
-
+          process.stdout.write("\x1b[u\x1b[0J");
           resolve(options[selectedIndex].value);
         }
       }
     }
 
-    process.stdin.on('keypress', onKeypress);
+    process.stdin.on("keypress", onKeypress);
   });
+}
+
+function confirmReinit() {
+  return new Promise((resolve) => {
+    console.log(
+      "‼\uFE0F If you have created any new additional file(s) and/or folder(s) in .agents then those file(s) and/or folder(s) will be moved to .agents/custom",
+    );
+    console.log("");
+
+    const options = [
+      { name: "\x1b[34mPROCEED\x1b[0m", value: true },
+      { name: "\x1b[31mTERMINATE\x1b[0m", value: false },
+    ];
+
+    let selectedIndex = 0;
+
+    function render() {
+      process.stdout.write("\x1b[u\x1b[0J");
+      for (let i = 0; i < options.length; i++) {
+        const prefix = i === selectedIndex ? "\u276f " : "  ";
+        const color = i === selectedIndex ? "\x1b[36m" : "";
+        process.stdout.write(`${prefix}${color}${options[i].name}\x1b[0m\n`);
+      }
+    }
+
+    process.stdout.write("\x1b[s");
+    render();
+
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+
+    function onKeypress(str, key) {
+      if (key) {
+        if (key.ctrl && key.name === "c") {
+          process.stdin.setRawMode(false);
+          process.exit();
+        } else if (key.name === "up") {
+          selectedIndex = (selectedIndex - 1 + options.length) % options.length;
+          render();
+        } else if (key.name === "down") {
+          selectedIndex = (selectedIndex + 1) % options.length;
+          render();
+        } else if (key.name === "return" || key.name === "enter") {
+          process.stdin.removeAllListeners("keypress");
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+
+          if (process.platform !== "win32") {
+            try {
+              childProcess.execFileSync("stty", ["sane"], { stdio: "inherit" });
+            } catch {}
+            try {
+              childProcess.execFileSync(
+                "python3",
+                ["-c", "import termios; termios.tcflush(0, termios.TCIFLUSH)"],
+                { stdio: ["inherit", "ignore", "ignore"] },
+              );
+            } catch {}
+          }
+
+          process.stdout.write("\x1b[u\x1b[0J");
+          resolve(selectedIndex === 0);
+        }
+      }
+    }
+
+    process.stdin.on("keypress", onKeypress);
+  });
+}
+
+function reinitAgentsDirectory() {
+  const standardFiles = new Set(Object.keys(agentFiles));
+  const excludeDirs = new Set(["old_agent_files", "custom"]);
+  let movedCount = 0;
+
+  const entries = fs.readdirSync(target);
+  const customDir = path.join(target, "custom");
+  fs.mkdirSync(customDir, { recursive: true });
+
+  for (const entry of entries) {
+    if (standardFiles.has(entry)) continue;
+    if (excludeDirs.has(entry)) continue;
+
+    const srcPath = path.join(target, entry);
+    const dstPath = path.join(customDir, entry);
+
+    try {
+      unlockFile(srcPath);
+      fs.renameSync(srcPath, dstPath);
+      movedCount += 1;
+    } catch (err) {
+      console.warn(
+        `\u26A0\uFE0F Warning: Could not move ${entry}: ${err.message}`,
+      );
+    }
+  }
+
+  return movedCount;
 }
 
 function migrateRootBackups() {
@@ -929,12 +1100,31 @@ function migrateRootBackups() {
 
 async function main() {
   try {
-    const selectedEnv = await selectEnvironment();
+    let selectedEnv = await selectEnvironment();
+
+    if (selectedEnv === "reinit") {
+      const proceed = await confirmReinit();
+      if (!proceed) {
+        console.log("[agent-sesh] Reinit cancelled.");
+        process.exit(0);
+      }
+
+      const movedCount = reinitAgentsDirectory();
+      if (movedCount > 0) {
+        console.log(
+          `[agent-sesh] Moved ${movedCount} custom file(s) and/or folder(s) to .agents/custom/`,
+        );
+      }
+
+      selectedEnv = await selectEnvironment(true);
+    }
 
     // Validate sudo access BEFORE touching any files.
     // If the user can't authenticate, abort cleanly.
     if (!preflightSudo()) {
-      console.error("❌ agent-sesh requires elevated privileges to protect files. Aborting.");
+      console.error(
+        "❌ agent-sesh requires elevated privileges to protect files. Aborting.",
+      );
       process.exit(1);
     }
 
@@ -946,22 +1136,24 @@ async function main() {
     const { created, existing } = ensureAgentsDirectory();
     migrateRootBackups();
     ensureBackupReadme();
-    
+
     let agentsFileStatus;
     let protectionStatus;
 
     if (fs.existsSync(otherFile) && fs.statSync(otherFile).isFile()) {
-      console.log(`🔄 Switching environment from ${otherName} to ${targetName}...`);
-      
+      console.log(
+        `🔄 Switching environment from ${otherName} to ${targetName}...`,
+      );
+
       const contentToMirror = fs.readFileSync(otherFile, "utf8");
-      
+
       if (fs.existsSync(targetFile)) {
         unlockFile(targetFile);
       }
-      
+
       fs.writeFileSync(targetFile, contentToMirror);
       protectionStatus = protectFile(targetFile);
-      
+
       // Cleanup the other file
       try {
         unlockFile(otherFile);
@@ -969,7 +1161,7 @@ async function main() {
       } catch (err) {
         console.warn(`⚠️ Warning: Could not delete ${otherName}:`, err.message);
       }
-      
+
       agentsFileStatus = `migrated from ${otherName}`;
     } else {
       agentsFileStatus = ensureAgentsFile(targetFile, targetName);
