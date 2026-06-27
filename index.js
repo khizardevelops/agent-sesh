@@ -805,6 +805,14 @@ Options:
       process.exit(0);
     }
 
+    // Catch unrecognized flags (typos, wrong dashes, etc.)
+    const hasUnknownFlag = args.some(a => a.startsWith("-"));
+    if (hasUnknownFlag) {
+      console.error(`\n  ${red}\u2716${reset}  \x1b[1mWrong flag or a wrong command\x1b[0m\n`);
+      console.error(`  ${yellow}\u2139${reset}  Usage: npx agent-sesh [--uni | --claude | --help]\n`);
+      process.exit(1);
+    }
+
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       resolve("universal");
       return;
