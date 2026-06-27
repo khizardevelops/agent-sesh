@@ -17,6 +17,9 @@
   ],
   "author": "khizardevelops",
   "license": "MIT",
+  "dependencies": {
+    "enquirer": "^2.4.1"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/khizardevelops/agent-sesh.git"

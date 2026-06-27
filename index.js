@@ -3,18 +3,16 @@
 const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
-const readline = require("readline");
+const { Select } = require("enquirer");
 
 const projectRoot = process.cwd();
 const agentsDirName = ".agents";
 const target = path.join(projectRoot, agentsDirName);
 const agentsFile = path.join(projectRoot, "AGENTS.md");
 const claudeFile = path.join(projectRoot, "CLAUDE.md");
-const yellow = "\x1b[33m";
 const blue = "\x1b[34m";
 const red = "\x1b[31m";
-const cyan = "\x1b[36m";
-const pink = "\x1b[35m";
+const yellow = "\x1b[33m";
 const reset = "\x1b[0m";
 
 const agentFiles = {
@@ -783,227 +781,88 @@ function printReport({
   );
 }
 
-function selectEnvironment(suppressReinit = false) {
-  return new Promise((resolve) => {
-    const args = process.argv.slice(2);
-    if (args.includes("--uni")) {
-      resolve("universal");
-      return;
-    }
-    if (args.includes("--claude")) {
-      resolve("claude");
-      return;
-    }
-    if (args.includes("--help") || args.includes("-h")) {
-      console.log(`Usage: npx agent-sesh [options]
+async function selectEnvironment(suppressReinit = false) {
+  const args = process.argv.slice(2);
+  if (args.includes("--uni")) return "universal";
+  if (args.includes("--claude")) return "claude";
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`Usage: npx agent-sesh [options]
 
 Options:
   --uni      Directly setup/switch to Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc…
   --claude   Directly setup/switch to Claude Code
   -h, --help Show help description
 `);
-      process.exit(0);
-    }
+    process.exit(0);
+  }
 
-    // Catch unrecognized flags (typos, wrong dashes, etc.)
-    const hasUnknownFlag = args.some(a => a.startsWith("-"));
-    if (hasUnknownFlag) {
-      console.error(`\n  ${red}\u2716${reset}  \x1b[1mWrong flag or a wrong command\x1b[0m\n`);
-      console.error(`  ${yellow}\u2139${reset}  Usage: npx agent-sesh [--uni | --claude | --help]\n`);
-      process.exit(1);
-    }
+  const hasUnknownFlag = args.some(a => a.startsWith("-"));
+  if (hasUnknownFlag) {
+    console.error(`\n  ${red}\u2716${reset}  \x1b[1mWrong flag or a wrong command\x1b[0m\n`);
+    console.error(`  ${yellow}\u2139${reset}  Usage: npx agent-sesh [--uni | --claude | --help]\n`);
+    process.exit(1);
+  }
 
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      resolve("universal");
-      return;
-    }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return "universal";
 
-    const agentsDirExists =
-      fs.existsSync(target) && fs.statSync(target).isDirectory();
-    const agentsDirPopulated = agentsDirExists && isAgentsDirectoryPopulated();
-    const agentsFileExists =
-      fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
-    const claudeFileExists =
-      fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
-    const isSwitch = agentsDirExists && (agentsFileExists || claudeFileExists);
-    const reinitMode = agentsDirPopulated && !suppressReinit;
+  const agentsDirExists = fs.existsSync(target) && fs.statSync(target).isDirectory();
+  const agentsDirPopulated = agentsDirExists && isAgentsDirectoryPopulated();
+  const agentsFileExists = fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
+  const claudeFileExists = fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+  const isSwitch = agentsDirExists && (agentsFileExists || claudeFileExists);
+  const reinitMode = agentsDirPopulated && !suppressReinit;
 
-    const options = [];
-    if (reinitMode) {
-      options.push({ name: "REINIT", value: "reinit" });
-    }
-    options.push(
-      {
-        name: "\u{1F7E2} Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc\u2026",
-        value: "universal",
-      },
-      { name: "\u{1F7E0} Claude Code (CLAUDE.md)", value: "claude" },
-    );
+  if (reinitMode) {
+    console.log(`\u{1F9E0} agent-sesh: Generating Project Brain...\n`);
+    const prompt = new Select({
+      name: "action",
+      message: "\u{2753} Want to reinitialise the current .agents folder?",
+      choices: [
+        { name: "reinit", message: `\u{1F535} REINIT` },
+        { role: "separator" },
+        { name: "universal", message: `\u{1F7E2} Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc\u2026` },
+        { name: "claude", message: `\u{1F7E0} Claude Code (CLAUDE.md)` },
+      ],
+    });
+    try { return await prompt.run(); } catch { process.exit(0); }
+  }
 
-    let selectedIndex = 0;
+  if (!isSwitch) {
+    console.log(`\u{1F9E0} agent-sesh: Generating Project Brain...\n`);
+  }
 
-    function render() {
-      process.stdout.write("\x1b[u\x1b[0J");
-
-      if (reinitMode) {
-        process.stdout.write(
-          "\u{1F9E0} agent-sesh: Generating Project Brain...\n\n",
-        );
-        process.stdout.write(
-          "\u{250C}\u{2500}\u{2500}{ \u2753 Want to reinitialise the current .agents folder? }\n",
-        );
-        process.stdout.write(
-          "\u{2502}   Don\u2019t worry \u2014 the contents of files in .agents will not be deleted.\n",
-        );
-        process.stdout.write("\u{2502}\n");
-
-        const reinitPrefix =
-          selectedIndex === 0
-            ? "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u276f"
-            : "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}";
-        process.stdout.write(
-          `\u{2502}${reinitPrefix} \x1b[34m\u{1F535} REINIT\x1b[0m\n`,
-        );
-
-        process.stdout.write("\u{2502}\n");
-        process.stdout.write(
-          "\u{2514}\u{2500}\u{2500}{ \u2753 Which AI coding agent environment do you want to SWITCH to? }\n",
-        );
-      } else {
-        process.stdout.write(
-          `\u2753 Which AI coding agent environment do you want to ${isSwitch ? "SWITCH to" : "IMPLEMENT"}?\n`,
-        );
-      }
-
-      const startIdx = reinitMode ? 1 : 0;
-      const lastIdx = options.length - 1;
-      for (let i = startIdx; i < options.length; i++) {
-        if (reinitMode) {
-          const isLast = i === lastIdx;
-          const branch = isLast ? "\u{2514}" : "\u{251C}";
-          const suffix =
-            i === selectedIndex ? "\u{2500}\u276f" : "\u{2500}\u{2500}";
-          process.stdout.write(`    ${branch}${suffix} ${options[i].name}\n`);
-        } else {
-          const prefix = i === selectedIndex ? "\u276f " : "  ";
-          process.stdout.write(`  ${prefix}${options[i].name}\n`);
-        }
-      }
-    }
-
-    process.stdout.write("\x1b[s");
-    render();
-
-    readline.emitKeypressEvents(process.stdin);
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-
-    function onKeypress(str, key) {
-      if (key) {
-        if (key.ctrl && key.name === "c") {
-          process.stdin.setRawMode(false);
-          process.exit();
-        } else if (key.name === "up") {
-          selectedIndex = (selectedIndex - 1 + options.length) % options.length;
-          render();
-        } else if (key.name === "down") {
-          selectedIndex = (selectedIndex + 1) % options.length;
-          render();
-        } else if (key.name === "return" || key.name === "enter") {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-
-          if (process.platform !== "win32") {
-            try {
-              childProcess.execFileSync("stty", ["sane"], { stdio: "inherit" });
-            } catch {}
-            try {
-              childProcess.execFileSync(
-                "python3",
-                ["-c", "import termios; termios.tcflush(0, termios.TCIFLUSH)"],
-                { stdio: ["inherit", "ignore", "ignore"] },
-              );
-            } catch {}
-          }
-
-          process.stdout.write("\x1b[u\x1b[0J");
-          resolve(options[selectedIndex].value);
-        }
-      }
-    }
-
-    process.stdin.on("keypress", onKeypress);
+  const action = isSwitch ? "SWITCH to" : "IMPLEMENT";
+  const prompt = new Select({
+    name: "environment",
+    message: `\u{2753} Which AI coding agent environment do you want to ${action}?`,
+    choices: [
+      { name: "universal", message: `\u{1F7E2} Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc\u2026` },
+      { name: "claude", message: `\u{1F7E0} Claude Code (CLAUDE.md)` },
+    ],
   });
+  try { return await prompt.run(); } catch { process.exit(0); }
 }
 
-function confirmReinit() {
-  return new Promise((resolve) => {
-    console.log(
-      "‼\uFE0F If you have created any new additional file(s) and/or folder(s) in .agents then those file(s) and/or folder(s) will be moved to .agents/custom",
-    );
-    console.log("");
+async function confirmReinit() {
+  console.log(
+    "‼\uFE0F If you have created any new additional file(s) and/or folder(s) in .agents then those file(s) and/or folder(s) will be moved to .agents/custom\n",
+  );
 
-    const options = [
-      { name: "\x1b[34mPROCEED\x1b[0m", value: true },
-      { name: "\x1b[31mTERMINATE\x1b[0m", value: false },
-    ];
-
-    let selectedIndex = 0;
-
-    function render() {
-      process.stdout.write("\x1b[u\x1b[0J");
-      for (let i = 0; i < options.length; i++) {
-        const prefix = i === selectedIndex ? "\u276f " : "  ";
-        const color = i === selectedIndex ? "\x1b[36m" : "";
-        process.stdout.write(`${prefix}${color}${options[i].name}\x1b[0m\n`);
-      }
-    }
-
-    process.stdout.write("\x1b[s");
-    render();
-
-    readline.emitKeypressEvents(process.stdin);
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-
-    function onKeypress(str, key) {
-      if (key) {
-        if (key.ctrl && key.name === "c") {
-          process.stdin.setRawMode(false);
-          process.exit();
-        } else if (key.name === "up") {
-          selectedIndex = (selectedIndex - 1 + options.length) % options.length;
-          render();
-        } else if (key.name === "down") {
-          selectedIndex = (selectedIndex + 1) % options.length;
-          render();
-        } else if (key.name === "return" || key.name === "enter") {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.setRawMode(false);
-          process.stdin.pause();
-
-          if (process.platform !== "win32") {
-            try {
-              childProcess.execFileSync("stty", ["sane"], { stdio: "inherit" });
-            } catch {}
-            try {
-              childProcess.execFileSync(
-                "python3",
-                ["-c", "import termios; termios.tcflush(0, termios.TCIFLUSH)"],
-                { stdio: ["inherit", "ignore", "ignore"] },
-              );
-            } catch {}
-          }
-
-          process.stdout.write("\x1b[u\x1b[0J");
-          resolve(selectedIndex === 0);
-        }
-      }
-    }
-
-    process.stdin.on("keypress", onKeypress);
+  const prompt = new Select({
+    name: "confirm",
+    message: "\u{2753} Proceed?",
+    choices: [
+      { name: "proceed", message: `${blue}PROCEED${reset}` },
+      { name: "terminate", message: `${red}TERMINATE${reset}` },
+    ],
   });
+
+  try {
+    const result = await prompt.run();
+    return result === "proceed";
+  } catch {
+    process.exit(0);
+  }
 }
 
 function reinitAgentsDirectory() {
