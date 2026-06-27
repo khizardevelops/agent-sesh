@@ -983,7 +983,31 @@ async function main() {
         );
       }
 
-      selectedEnv = await selectEnvironment(true);
+      // Detect which environment was active before backing up
+      const hadAgents = fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
+      const hadClaude = fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+
+      // Back up existing AGENTS.md / CLAUDE.md to old_agent_files
+      for (const [file, name] of [[agentsFile, "AGENTS.md"], [claudeFile, "CLAUDE.md"]]) {
+        if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+          const content = fs.readFileSync(file, "utf8");
+          if (!hasDuplicateBackup(name, content)) {
+            const backupPath = getAvailableBackupPath(name);
+            unlockFile(file);
+            try {
+              fs.renameSync(file, backupPath);
+            } catch (err) {
+              console.warn(`\u26A0\uFE0F Could not back up ${name}: ${err.message}`);
+            }
+          } else {
+            unlockFile(file);
+            try { fs.unlinkSync(file); } catch {}
+          }
+        }
+      }
+
+      // Restore the same environment type after reinit
+      selectedEnv = hadClaude && !hadAgents ? "claude" : "universal";
     }
 
     // Validate sudo access BEFORE touching any files.
