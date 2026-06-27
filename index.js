@@ -167,9 +167,9 @@ Define project-specific terms and domain language.
 
 ## Ambiguous Words
 `,
-  "project_commands.md": `# Project Commands
+  "commands.md": `# Project Commands
 
-Document the essential commands for working on this project. Keep this file updated as the project evolves.
+Document the all essential and relevant commands for working on this project. Keep this file updated as the project evolves.
 
 ## Frontend
 
