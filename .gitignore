@@ -28,3 +28,4 @@ package-lock.json
 # Misc
 .env
 .plans
+.gitignore
