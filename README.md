@@ -39,13 +39,13 @@ project/
     ├── tasks.md
     ├── last-session.md
     ├── decisions.md
+    ├── commands.md
     ├── context.md
     ├── style.md
     ├── roadmap.md
     ├── constraints.md
     ├── known-issues.md
-    ├── glossary.md
-    └── project_commands.md
+    └── glossary.md
 ```
 The package does not ship a prebuilt `.agents/` folder. These files are generated on the client's computer when `npx agent-sesh` runs.
 
