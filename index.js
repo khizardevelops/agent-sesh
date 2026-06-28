@@ -3,17 +3,21 @@
 const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
-const { Select } = require("enquirer");
+const {
+  intro,
+  outro,
+  select,
+  confirm,
+  note,
+  isCancel,
+  isTTY,
+} = require("@clack/prompts");
 
 const projectRoot = process.cwd();
 const agentsDirName = ".agents";
 const target = path.join(projectRoot, agentsDirName);
 const agentsFile = path.join(projectRoot, "AGENTS.md");
 const claudeFile = path.join(projectRoot, "CLAUDE.md");
-const blue = "\x1b[34m";
-const red = "\x1b[31m";
-const yellow = "\x1b[33m";
-const reset = "\x1b[0m";
 
 const agentFiles = {
   "README.md": `# .agents
@@ -268,7 +272,6 @@ function ensureBackupReadme() {
 
   const readmePath = path.join(oldAgentFilesDir, "README.md");
 
-  // Write or update the README
   if (!fs.existsSync(readmePath)) {
     fs.writeFileSync(readmePath, oldAgentFilesReadme);
   } else {
@@ -279,21 +282,19 @@ function ensureBackupReadme() {
     }
   }
 
-  protectFile(readmePath);
+  makeReadOnly(readmePath);
 
-  // Create symlinks in the claude/ and agents/ subdirectories
   for (const subdir of ["claude", "agents"]) {
     const subdirPath = path.join(oldAgentFilesDir, subdir);
     fs.mkdirSync(subdirPath, { recursive: true });
     const linkPath = path.join(subdirPath, "README.md");
 
     try {
-      // Remove existing file/link if present
       if (fs.existsSync(linkPath)) {
         const stat = fs.lstatSync(linkPath);
         if (stat.isSymbolicLink()) {
           const target = fs.readlinkSync(linkPath);
-          if (target === path.join("..", "README.md")) continue; // already correct
+          if (target === path.join("..", "README.md")) continue;
         }
         fs.unlinkSync(linkPath);
       }
@@ -345,19 +346,14 @@ function canPromptForElevation() {
 }
 
 function preflightSudo() {
-  // On Windows, no sudo needed.
   if (process.platform === "win32") return true;
 
-  // Already running as root — no sudo needed.
   try {
     if (process.getuid() === 0) return true;
   } catch {}
 
   if (!canPromptForElevation()) return false;
 
-  // Validate sudo credentials upfront and cache the session.
-  // All subsequent sudo calls (chattr, chflags) will reuse the cached
-  // credentials without re-prompting.
   try {
     childProcess.execFileSync("sudo", ["-v"], { stdio: "inherit" });
     return true;
@@ -593,32 +589,13 @@ function unlockFile(filePath) {
 
 function protectFile(filePath) {
   makeReadOnly(filePath);
-
-  if (makeLinuxImmutable(filePath)) {
-    return "linux immutable";
-  }
-
-  const macStatus = makeMacImmutable(filePath);
-
-  if (macStatus === "system-immutable") {
-    return "macOS system immutable";
-  }
-
-  if (macStatus === "user-immutable") {
-    return "macOS user immutable";
-  }
-
-  if (protectWindowsFile(filePath)) {
-    return "Windows ACL deny-write";
-  }
-
-  return "read-only fallback";
+  return "read-only";
 }
 
 function ensureAgentsDirectory() {
   if (fs.existsSync(target) && !fs.statSync(target).isDirectory()) {
     console.error(
-      "❌ Error: A .agents path already exists here, but it is not a folder.",
+      "\u274C Error: A .agents path already exists here, but it is not a folder.",
     );
     process.exit(1);
   }
@@ -666,16 +643,12 @@ function ensureAgentsFile(filePath, fileName) {
     return "unchanged";
   }
 
-  // If the existing content is just the default agent-sesh template
-  // (either the AGENTS.md or CLAUDE.md variant), there is nothing
-  // custom worth preserving — overwrite without creating a backup.
   if (existingContent && isDefaultTemplate(existingContent)) {
     unlockFile(filePath);
     fs.writeFileSync(filePath, content);
     return "recreated";
   }
 
-  // Avoid creating duplicate backups if the same content is already backed up
   if (existingContent && hasDuplicateBackup(fileName, existingContent)) {
     unlockFile(filePath);
     fs.writeFileSync(filePath, content);
@@ -737,134 +710,6 @@ function getProtectionStatus(status) {
   return status;
 }
 
-function printReport({
-  created,
-  existing,
-  total,
-  agentsFileStatus,
-  protectionStatus,
-  fileName,
-}) {
-  console.log("[agent-sesh] Project brain setup completed ✅");
-  console.log("");
-  console.log("Status");
-  console.log(
-    `  .agents/    ${getAgentsDirectoryStatus(created, existing, total)}`,
-  );
-  console.log(
-    `  ${fileName.padEnd(11)} ${getAgentsFileStatus(agentsFileStatus)}`,
-  );
-  console.log(`  protection  ${getProtectionStatus(protectionStatus)}`);
-
-  if (
-    agentsFileStatus !== "created" &&
-    agentsFileStatus !== "unchanged" &&
-    !agentsFileStatus.startsWith("migrated")
-  ) {
-    console.log("");
-    console.log(
-      `${yellow}The existing ${fileName} content was preserved in ${agentsFileStatus}.${reset}`,
-    );
-  }
-
-  console.log("");
-  console.log(
-    `${fileName} now directs agents to read .agents/ before working.`,
-  );
-  console.log("");
-  console.log("How to use:");
-  console.log("   │");
-  console.log(`   ├─ Just tag @${fileName} before writing prompt`);
-  console.log("   │");
-  console.log(
-    "   └─ To force a deep-dive, tag @.agents/ or @.agents/README.md",
-  );
-}
-
-async function selectEnvironment(suppressReinit = false) {
-  const args = process.argv.slice(2);
-  if (args.includes("--uni")) return "universal";
-  if (args.includes("--claude")) return "claude";
-  if (args.includes("--help") || args.includes("-h")) {
-    console.log(`Usage: npx agent-sesh [options]
-
-Options:
-  --uni      Directly setup/switch to Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc…
-  --claude   Directly setup/switch to Claude Code
-  -h, --help Show help description
-`);
-    process.exit(0);
-  }
-
-  const hasUnknownFlag = args.some(a => a.startsWith("-"));
-  if (hasUnknownFlag) {
-    console.error(`\n  ${red}\u2716${reset}  \x1b[1mWrong flag or a wrong command\x1b[0m\n`);
-    console.error(`  ${yellow}\u2139${reset}  Usage: npx agent-sesh [--uni | --claude | --help]\n`);
-    process.exit(1);
-  }
-
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return "universal";
-
-  const agentsDirExists = fs.existsSync(target) && fs.statSync(target).isDirectory();
-  const agentsDirPopulated = agentsDirExists && isAgentsDirectoryPopulated();
-  const agentsFileExists = fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
-  const claudeFileExists = fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
-  const isSwitch = agentsDirExists && (agentsFileExists || claudeFileExists);
-  const reinitMode = agentsDirPopulated && !suppressReinit;
-
-  if (reinitMode) {
-    console.log(`\u{1F9E0} agent-sesh: Generating Project Brain...\n`);
-    const prompt = new Select({
-      name: "action",
-      message: "\u{2753} Want to reinitialise the current .agents folder?",
-      choices: [
-        { name: "reinit", message: `\u{1F535} REINIT` },
-        { role: "separator" },
-        { name: "universal", message: `\u{1F7E2} Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc\u2026` },
-        { name: "claude", message: `\u{1F7E0} Claude Code (CLAUDE.md)` },
-      ],
-    });
-    try { return await prompt.run(); } catch { process.exit(0); }
-  }
-
-  if (!isSwitch) {
-    console.log(`\u{1F9E0} agent-sesh: Generating Project Brain...\n`);
-  }
-
-  const action = isSwitch ? "SWITCH to" : "IMPLEMENT";
-  const prompt = new Select({
-    name: "environment",
-    message: `\u{2753} Which AI coding agent environment do you want to ${action}?`,
-    choices: [
-      { name: "universal", message: `\u{1F7E2} Universal (AGENTS.md) - Codex, Windsurf, Cursor, etc\u2026` },
-      { name: "claude", message: `\u{1F7E0} Claude Code (CLAUDE.md)` },
-    ],
-  });
-  try { return await prompt.run(); } catch { process.exit(0); }
-}
-
-async function confirmReinit() {
-  console.log(
-    "‼\uFE0F If you have created any new additional file(s) and/or folder(s) in .agents then those file(s) and/or folder(s) will be moved to .agents/custom\n",
-  );
-
-  const prompt = new Select({
-    name: "confirm",
-    message: "\u{2753} Proceed?",
-    choices: [
-      { name: "proceed", message: `${blue}PROCEED${reset}` },
-      { name: "terminate", message: `${red}TERMINATE${reset}` },
-    ],
-  });
-
-  try {
-    const result = await prompt.run();
-    return result === "proceed";
-  } catch {
-    process.exit(0);
-  }
-}
-
 function reinitAgentsDirectory() {
   const standardFiles = new Set(Object.keys(agentFiles));
   const excludeDirs = new Set(["old_agent_files", "custom"]);
@@ -896,9 +741,6 @@ function reinitAgentsDirectory() {
 }
 
 function migrateRootBackups() {
-  // Consolidate all OLD_CLAUDE_*.md and OLD_AGENTS_*.md files from both the
-  // project root and the backup directory. Deduplicate by content, sort by
-  // last-modified date (oldest = 1), and write sequentially into the backup dir.
   const types = [
     { pattern: /^OLD_CLAUDE_\d+\.md$/, name: "CLAUDE.md", base: "CLAUDE" },
     { pattern: /^OLD_AGENTS_\d+\.md$/, name: "AGENTS.md", base: "AGENTS" },
@@ -907,7 +749,6 @@ function migrateRootBackups() {
   for (const type of types) {
     const destDir = getBackupDir(type.name);
 
-    // Collect matching files from both project root and backup directory
     const allFiles = [];
 
     for (const dir of [projectRoot, destDir]) {
@@ -915,7 +756,6 @@ function migrateRootBackups() {
         for (const entry of fs.readdirSync(dir)) {
           if (type.pattern.test(entry)) {
             const filePath = path.join(dir, entry);
-            // Avoid duplicates if projectRoot === destDir (shouldn't happen, but guard)
             if (!allFiles.includes(filePath)) {
               allFiles.push(filePath);
             }
@@ -928,7 +768,6 @@ function migrateRootBackups() {
 
     if (allFiles.length === 0) continue;
 
-    // Read content and mtime for each file, deduplicate by content
     const seen = new Set();
     const uniqueEntries = [];
 
@@ -945,10 +784,8 @@ function migrateRootBackups() {
       }
     }
 
-    // Sort by modification time — oldest first gets the lowest number
     uniqueEntries.sort((a, b) => a.mtime - b.mtime);
 
-    // Delete all originals from both locations
     for (const filePath of allFiles) {
       try {
         fs.unlinkSync(filePath);
@@ -957,7 +794,6 @@ function migrateRootBackups() {
       }
     }
 
-    // Write deduplicated files with sequential numbering
     for (let i = 0; i < uniqueEntries.length; i++) {
       const finalPath = path.join(destDir, `OLD_${type.base}_${i + 1}.md`);
       fs.writeFileSync(finalPath, uniqueEntries[i].content);
@@ -965,114 +801,323 @@ function migrateRootBackups() {
   }
 }
 
+// ── UI functions (using @clack/prompts) ──────────────────────────
+
+let interactive = true;
+
+async function selectEnvironment() {
+  const agentsDirExists =
+    fs.existsSync(target) && fs.statSync(target).isDirectory();
+  const agentsDirPopulated =
+    agentsDirExists && isAgentsDirectoryPopulated();
+  const agentsFileExists =
+    fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
+  const claudeFileExists =
+    fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+  const isSwitch = agentsDirExists && (agentsFileExists || claudeFileExists);
+
+  if (agentsDirPopulated) {
+    const shouldReinit = await select({
+      message: "Want to reinitialise the current .agents folder?",
+      options: [
+        {
+          value: "yes",
+          label: "\u{1F535} Yes, reinitialise .agents/",
+          hint: "your custom files & existing content will be preserved",
+        },
+        { value: "no", label: "\u{1f504} No, just switch environment" },
+      ],
+    });
+    if (isCancel(shouldReinit)) process.exit(0);
+
+    if (shouldReinit === "yes") return "reinit";
+  }
+
+  const verb = isSwitch ? "switch to" : "set up";
+  const env = await select({
+    message: `Which AI coding agent environment do you want to ${verb}?`,
+    options: [
+      {
+        value: "universal",
+        label: "\u{1F7E2} Universal (AGENTS.md)",
+        hint: "Codex, Windsurf, Cursor, etc\u2026",
+      },
+      {
+        value: "claude",
+        label: "\u{1F7E0} Claude Code (CLAUDE.md)",
+      },
+    ],
+  });
+  if (isCancel(env)) process.exit(0);
+  return env;
+}
+
+async function confirmReinit() {
+  const proceed = await confirm({
+    message:
+      "Proceed? Custom files and folders in .agents/ will be moved to .agents/custom/",
+  });
+  if (isCancel(proceed)) process.exit(0);
+  return proceed;
+}
+
+async function installGitHooks() {
+  const dotGit = path.join(projectRoot, ".git");
+
+  if (!fs.existsSync(dotGit) || !fs.statSync(dotGit).isDirectory()) {
+    if (!interactive) return null;
+
+    const choice = await select({
+      message: "No Git repository found. Run git init now?",
+      options: [
+        {
+          value: "yes",
+          label: "Yes — run git init",
+          hint: "recommended",
+        },
+        { value: "no", label: "No — I'll do it later" },
+      ],
+    });
+    if (isCancel(choice)) return null;
+
+    if (choice !== "yes") {
+      return [
+        "File-protection git hooks were not installed.",
+        "",
+        "Skipping this and then committing changes will cause",
+        "branch merges and GitHub Actions to fail.",
+        "",
+        "If you plan to use git, run:",
+        "  git init --initial-branch=main",
+        "  npx agent-sesh",
+        "",
+        "If you never plan to use git, ignore this message.",
+      ].join("\n");
+    }
+
+    try {
+      childProcess.execSync("git init --initial-branch=main", {
+        cwd: projectRoot,
+        stdio: "ignore",
+      });
+    } catch (err) {
+      return [
+        "git init failed. Run manually:",
+        `  git init --initial-branch=main`,
+        `  npx agent-sesh`,
+      ].join("\n");
+    }
+  }
+
+  const hooksDir = path.join(dotGit, "hooks");
+  if (!fs.existsSync(hooksDir)) return null;
+
+  const hookScript = `#!/bin/sh
+# agent-sesh: lock down pointer files after git operations
+if [ -f "AGENTS.md" ]; then
+    chmod 444 AGENTS.md 2>/dev/null
+fi
+if [ -f "CLAUDE.md" ]; then
+    chmod 444 CLAUDE.md 2>/dev/null
+fi
+`;
+
+  for (const name of ["post-merge", "post-checkout"]) {
+    const hookPath = path.join(hooksDir, name);
+    try {
+      fs.writeFileSync(hookPath, hookScript);
+      if (process.platform !== "win32") {
+        fs.chmodSync(hookPath, 0o755);
+      }
+    } catch {
+      // Best-effort: hook installation should never crash the main flow
+    }
+  }
+
+  return null;
+}
+
+// ── main ──────────────────────────────────────────────────────────
+
 async function main() {
-  try {
-    let selectedEnv = await selectEnvironment();
+  const args = process.argv.slice(2);
 
-    if (selectedEnv === "reinit") {
-      const proceed = await confirmReinit();
-      if (!proceed) {
-        console.log("[agent-sesh] Reinit cancelled.");
-        process.exit(0);
-      }
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`Usage: npx agent-sesh [options]
 
-      const movedCount = reinitAgentsDirectory();
-      if (movedCount > 0) {
-        console.log(
-          `[agent-sesh] Moved ${movedCount} custom file(s) and/or folder(s) to .agents/custom/`,
-        );
-      }
+Options:
+  --uni      Directly setup/switch to Universal (AGENTS.md) — Codex, Windsurf, Cursor, etc…
+  --claude   Directly setup/switch to Claude Code
+  -h, --help Show help description
+`);
+    process.exit(0);
+  }
 
-      // Detect which environment was active before backing up
-      const hadAgents = fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
-      const hadClaude = fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+  const hasUnknownFlag = args.some((a) => a.startsWith("-") && a !== "--uni" && a !== "--claude");
+  if (hasUnknownFlag) {
+    console.error(`\n  \u2716  Wrong flag or a wrong command\n`);
+    console.error(`  \u2139  Usage: npx agent-sesh [--uni | --claude | --help]\n`);
+    process.exit(1);
+  }
 
-      // Back up existing AGENTS.md / CLAUDE.md to old_agent_files
-      for (const [file, name] of [[agentsFile, "AGENTS.md"], [claudeFile, "CLAUDE.md"]]) {
-        if (fs.existsSync(file) && fs.statSync(file).isFile()) {
-          const content = fs.readFileSync(file, "utf8");
-          if (!hasDuplicateBackup(name, content)) {
-            const backupPath = getAvailableBackupPath(name);
-            unlockFile(file);
-            try {
-              fs.renameSync(file, backupPath);
-            } catch (err) {
-              console.warn(`\u26A0\uFE0F Could not back up ${name}: ${err.message}`);
-            }
-          } else {
-            unlockFile(file);
-            try { fs.unlinkSync(file); } catch {}
+  let selectedEnv;
+
+  if (args.includes("--uni")) {
+    interactive = false;
+    selectedEnv = "universal";
+  } else if (args.includes("--claude")) {
+    interactive = false;
+    selectedEnv = "claude";
+  } else if (!isTTY) {
+    selectedEnv = "universal";
+  } else {
+    intro("\u{1F9E0} agent-sesh — Project Brain Setup");
+
+    selectedEnv = await selectEnvironment();
+  }
+
+  if (selectedEnv === "reinit") {
+    const proceed = await confirmReinit();
+    if (!proceed) {
+      outro("\u{1F6AB} Reinit cancelled.");
+      process.exit(0);
+    }
+
+    const movedCount = reinitAgentsDirectory();
+    if (movedCount > 0) {
+      note(
+        `${movedCount} custom file(s) and/or folder(s) moved to .agents/custom/`,
+        "Reinitialised"
+      );
+    }
+
+    const hadAgents =
+      fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
+    const hadClaude =
+      fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+
+    for (const [file, name] of [
+      [agentsFile, "AGENTS.md"],
+      [claudeFile, "CLAUDE.md"],
+    ]) {
+      if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+        const content = fs.readFileSync(file, "utf8");
+        if (!hasDuplicateBackup(name, content)) {
+          const backupPath = getAvailableBackupPath(name);
+          unlockFile(file);
+          try {
+            fs.renameSync(file, backupPath);
+          } catch (err) {
+            console.warn(
+              `\u26A0\uFE0F Could not back up ${name}: ${err.message}`,
+            );
           }
+        } else {
+          unlockFile(file);
+          try {
+            fs.unlinkSync(file);
+          } catch {}
         }
       }
-
-      // Restore the same environment type after reinit
-      selectedEnv = hadClaude && !hadAgents ? "claude" : "universal";
     }
 
-    // Validate sudo access BEFORE touching any files.
-    // If the user can't authenticate, abort cleanly.
-    if (!preflightSudo()) {
-      console.error(
-        "❌ agent-sesh requires elevated privileges to protect files. Aborting.",
+    selectedEnv = hadClaude && !hadAgents ? "claude" : "universal";
+  }
+
+  for (const f of [agentsFile, claudeFile]) {
+    if (fs.existsSync(f)) unlockFile(f);
+  }
+
+  const targetFile = selectedEnv === "universal" ? agentsFile : claudeFile;
+  const otherFile = selectedEnv === "universal" ? claudeFile : agentsFile;
+  const targetName = selectedEnv === "universal" ? "AGENTS.md" : "CLAUDE.md";
+  const otherName = selectedEnv === "universal" ? "CLAUDE.md" : "AGENTS.md";
+
+  const { created, existing } = ensureAgentsDirectory();
+  migrateRootBackups();
+  ensureBackupReadme();
+
+  let agentsFileStatus;
+  let protectionStatus;
+
+  if (fs.existsSync(otherFile) && fs.statSync(otherFile).isFile()) {
+    const contentToMirror = fs.readFileSync(otherFile, "utf8");
+
+    if (fs.existsSync(targetFile)) {
+      unlockFile(targetFile);
+    }
+
+    fs.writeFileSync(targetFile, contentToMirror);
+    protectionStatus = protectFile(targetFile);
+
+    try {
+      unlockFile(otherFile);
+      fs.unlinkSync(otherFile);
+    } catch (err) {
+      console.warn(
+        `\u26A0\uFE0F Warning: Could not delete ${otherName}: ${err.message}`,
       );
-      process.exit(1);
     }
 
-    const targetFile = selectedEnv === "universal" ? agentsFile : claudeFile;
-    const otherFile = selectedEnv === "universal" ? claudeFile : agentsFile;
-    const targetName = selectedEnv === "universal" ? "AGENTS.md" : "CLAUDE.md";
-    const otherName = selectedEnv === "universal" ? "CLAUDE.md" : "AGENTS.md";
+    agentsFileStatus = `migrated from ${otherName}`;
+  } else {
+    agentsFileStatus = ensureAgentsFile(targetFile, targetName);
+    protectionStatus = protectFile(targetFile);
+  }
 
-    const { created, existing } = ensureAgentsDirectory();
-    migrateRootBackups();
-    ensureBackupReadme();
+  const files = fs.readdirSync(target);
 
-    let agentsFileStatus;
-    let protectionStatus;
+  let gitWarning = null;
+  gitWarning = await installGitHooks();
 
-    if (fs.existsSync(otherFile) && fs.statSync(otherFile).isFile()) {
-      console.log(
-        `🔄 Switching environment from ${otherName} to ${targetName}...`,
-      );
+  const statusLines = [
+    `  .agents/    ${getAgentsDirectoryStatus(created, existing, files.length)}`,
+    `  ${targetName.padEnd(11)} ${getAgentsFileStatus(agentsFileStatus)}`,
+    `  protection  ${getProtectionStatus(protectionStatus)}`,
+  ];
 
-      const contentToMirror = fs.readFileSync(otherFile, "utf8");
+  if (
+    agentsFileStatus !== "created" &&
+    agentsFileStatus !== "unchanged" &&
+    !agentsFileStatus.startsWith("migrated")
+  ) {
+    statusLines.push(
+      "",
+      `The existing ${targetName} content was preserved in ${agentsFileStatus}.`,
+    );
+  }
 
-      if (fs.existsSync(targetFile)) {
-        unlockFile(targetFile);
-      }
+  statusLines.push(
+    "",
+    `${targetName} now directs agents to read .agents/ before working.`,
+  );
 
-      fs.writeFileSync(targetFile, contentToMirror);
-      protectionStatus = protectFile(targetFile);
+  if (interactive) {
+    const finalOutro = [
+      "Project brain setup completed \u2705",
+      "",
+      ...statusLines,
+    ].join("\n");
+    outro(finalOutro);
 
-      // Cleanup the other file
-      try {
-        unlockFile(otherFile);
-        fs.unlinkSync(otherFile);
-      } catch (err) {
-        console.warn(`⚠️ Warning: Could not delete ${otherName}:`, err.message);
-      }
-
-      agentsFileStatus = `migrated from ${otherName}`;
-    } else {
-      agentsFileStatus = ensureAgentsFile(targetFile, targetName);
-      protectionStatus = protectFile(targetFile);
+    if (gitWarning) {
+      note(gitWarning, "\u26A0\uFE0F  Warning");
     }
-
-    const files = fs.readdirSync(target);
-
-    printReport({
-      created,
-      existing,
-      total: files.length,
-      agentsFileStatus,
-      protectionStatus,
-      fileName: targetName,
-    });
-  } catch (err) {
-    console.error("[agent-sesh] Failed to create project brain:", err.message);
-    process.exit(1);
+  } else {
+    console.log("[agent-sesh] Project brain setup completed \u2705");
+    console.log("");
+    console.log("Status");
+    for (const line of statusLines) {
+      console.log(line);
+    }
+    if (gitWarning) {
+      console.log("");
+      console.log(gitWarning);
+    }
   }
 }
 
-main();
+main().catch((err) => {
+  console.error("[agent-sesh] Failed to create project brain:", err.message);
+  process.exit(1);
+});

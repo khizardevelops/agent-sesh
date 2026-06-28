@@ -1,6 +1,6 @@
 # 🧠 agent-sesh
 
-> **Never start an AI coding session from scratch again.** `agent-sesh` is a zero-dependency CLI tool that generates a persistent "Project Brain" in your workspace. It solves the "Context Amnesia" problem by creating a standardised `.agents/` directory and a root `AGENTS.md` or `CLAUDE.md` pointer that tells AIs to read and maintain that context.
+> **Never start an AI coding session from scratch again.** `agent-sesh` generates a persistent "Project Brain" in your workspace. It solves the "Context Amnesia" problem by creating a standardised `.agents/` directory and a root `AGENTS.md` or `CLAUDE.md` pointer that tells AIs to read and maintain that context.
 > Stateful AI coding sessions. Zero amnesia. Maximum vibe.
 
 [![npm version](https://img.shields.io/npm/v/agent-sesh.svg)](https://www.npmjs.com/package/agent-sesh)
@@ -61,26 +61,42 @@ If the pointer file already exists, agent-sesh preserves it as a backup (e.g. `O
 ### 🔄 Seamless Environment Switching
 
 You can easily switch your workspace environment at any time:
-- Switching to **Universal** (`--uni`) will unlock, copy/mirror the contents of `CLAUDE.md` to `AGENTS.md`, lock `AGENTS.md`, and clean up `CLAUDE.md`.
-- Switching to **Claude Code** (`--claude`) will unlock, copy/mirror the contents of `AGENTS.md` to `CLAUDE.md`, lock `CLAUDE.md`, and clean up `AGENTS.md`.
+- Switching to **Universal** (`--uni`) will copy/mirror the contents of `CLAUDE.md` to `AGENTS.md`, protect `AGENTS.md`, and clean up `CLAUDE.md`.
+- Switching to **Claude Code** (`--claude`) will copy/mirror the contents of `AGENTS.md` to `CLAUDE.md`, protect `CLAUDE.md`, and clean up `AGENTS.md`.
 
 This copies over any custom instructions you've tailored for your agents, while keeping your workspace clean and target-specific.
 
 ---
 
-## 🔒 File Immutability
+## 🔒 Pointer File Protection
 
 The instruction file (`AGENTS.md` or `CLAUDE.md`) is meant to be a stable pointer, not a working memory file.
 
-agent-sesh locks it so AI agents are less likely to accidentally overwrite it. All project state, tasks, decisions, issues, and handoff notes should live in `.agents/`.
+agent-sesh protects it so AI agents are less likely to accidentally overwrite it. All project state, tasks, decisions, issues, and handoff notes should live in `.agents/`.
 
-Protection depends on the operating system:
+### How it works (read-only, not immutable)
 
-- Linux: uses `chattr +i` when available, then falls back to read-only permissions.
-- macOS: uses `chflags schg` or `chflags uchg` when available, then falls back to read-only permissions.
-- Windows: uses a deny-write/delete ACL and the read-only file attribute when available.
+Unlike older versions that used OS-level immutability (`chattr +i`, `chflags`), agent-sesh now uses **standard read-only permissions** (`chmod 444` on macOS/Linux, `attrib +r` on Windows). This blocks AI agents from writing to the file, but still lets Git delete and replace it during pulls, merges, and checkouts — so your teammates never hit `Permission denied` errors.
 
-The goal is simple: keep the pointer file as the permanent signpost, and make `.agents/` the place where project memory changes.
+### Automatic Git hooks
+
+When you run `agent-sesh` in a Git repository, it automatically installs two local hooks:
+
+- `post-merge` — re-applies read-only protection after `git pull` / `git merge`
+- `post-checkout` — re-applies read-only protection after `git checkout`
+
+This means even after your teammates pull your branch and Git replaces the pointer file, the hooks lock it back down immediately. No extra steps required.
+
+> **Note:** If you run `agent-sesh` before `git init`, it will offer to run `git init` for you so the hooks can be installed. If you decline, just run `git init` and then `npx agent-sesh` again — it's safe to re-run.
+
+### tl;dr
+
+| | Old (`chattr +i`) | New (`chmod 444`) |
+|---|---|---|
+| AI writes blocked? | Yes | Yes |
+| `git pull` works? | No — crashes | Yes |
+| Teammates need to do anything? | Couldn't pull at all | Hooks auto-protect |
+| `rm -f` works? | No | Yes |
 
 ---
 

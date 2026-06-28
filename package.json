@@ -18,7 +18,7 @@
   "author": "khizardevelops",
   "license": "MIT",
   "dependencies": {
-    "enquirer": "^2.4.1"
+    "@clack/prompts": "^1.6.0"
   },
   "repository": {
     "type": "git",
