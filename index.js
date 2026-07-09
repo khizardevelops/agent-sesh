@@ -259,10 +259,12 @@ function isAgentsDirectoryPopulated() {
   return meaningful.length > 0;
 }
 
-function getBackupDir(fileName) {
+function getBackupDir(fileName, { create = false } = {}) {
   const subdir = fileName === "CLAUDE.md" ? "claude" : "agents";
   const dir = path.join(target, "old_agent_files", subdir);
-  fs.mkdirSync(dir, { recursive: true });
+  if (create) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
   return dir;
 }
 
@@ -306,7 +308,8 @@ function ensureBackupReadme() {
 }
 
 function getAvailableBackupPath(fileName) {
-  const dir = getBackupDir(fileName);
+  // Create the dir now — we are about to write a backup file.
+  const dir = getBackupDir(fileName, { create: true });
   const base = fileName.replace(".md", "");
   let index = 1;
   let candidate = path.join(dir, `OLD_${base}_${index}.md`);
@@ -320,7 +323,10 @@ function getAvailableBackupPath(fileName) {
 }
 
 function hasDuplicateBackup(fileName, contentToBackup) {
+  // Do NOT create the dir here — only check if it already exists.
   const dir = getBackupDir(fileName);
+  if (!fs.existsSync(dir)) return false;
+
   const base = fileName.replace(".md", "");
   let index = 1;
   let candidate = path.join(dir, `OLD_${base}_${index}.md`);
@@ -747,11 +753,13 @@ function migrateRootBackups() {
   ];
 
   for (const type of types) {
+    // Only use the existing destDir for scanning — don't create it yet.
     const destDir = getBackupDir(type.name);
 
     const allFiles = [];
 
     for (const dir of [projectRoot, destDir]) {
+      if (!fs.existsSync(dir)) continue;
       try {
         for (const entry of fs.readdirSync(dir)) {
           if (type.pattern.test(entry)) {
@@ -794,9 +802,13 @@ function migrateRootBackups() {
       }
     }
 
-    for (let i = 0; i < uniqueEntries.length; i++) {
-      const finalPath = path.join(destDir, `OLD_${type.base}_${i + 1}.md`);
-      fs.writeFileSync(finalPath, uniqueEntries[i].content);
+    // Create the dir only if there is actual content to write.
+    if (uniqueEntries.length > 0) {
+      const writeDir = getBackupDir(type.name, { create: true });
+      for (let i = 0; i < uniqueEntries.length; i++) {
+        const finalPath = path.join(writeDir, `OLD_${type.base}_${i + 1}.md`);
+        fs.writeFileSync(finalPath, uniqueEntries[i].content);
+      }
     }
   }
 }
@@ -996,17 +1008,28 @@ Options:
     const hadClaude =
       fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
 
+    let reinitCreatedBackup = false;
     for (const [file, name] of [
       [agentsFile, "AGENTS.md"],
       [claudeFile, "CLAUDE.md"],
     ]) {
       if (fs.existsSync(file) && fs.statSync(file).isFile()) {
         const content = fs.readFileSync(file, "utf8");
+        // If the file is a default agent-sesh template, just delete it —
+        // no backup needed (and no old_agent_files folder created).
+        if (isDefaultTemplate(content)) {
+          unlockFile(file);
+          try {
+            fs.unlinkSync(file);
+          } catch {}
+          continue;
+        }
         if (!hasDuplicateBackup(name, content)) {
           const backupPath = getAvailableBackupPath(name);
           unlockFile(file);
           try {
             fs.renameSync(file, backupPath);
+            reinitCreatedBackup = true;
           } catch (err) {
             console.warn(
               `\u26A0\uFE0F Could not back up ${name}: ${err.message}`,
@@ -1019,6 +1042,10 @@ Options:
           } catch {}
         }
       }
+    }
+
+    if (reinitCreatedBackup) {
+      ensureBackupReadme();
     }
 
     selectedEnv = hadClaude && !hadAgents ? "claude" : "universal";
@@ -1035,7 +1062,6 @@ Options:
 
   const { created, existing } = ensureAgentsDirectory();
   migrateRootBackups();
-  ensureBackupReadme();
 
   let agentsFileStatus;
   let protectionStatus;
@@ -1063,6 +1089,18 @@ Options:
   } else {
     agentsFileStatus = ensureAgentsFile(targetFile, targetName);
     protectionStatus = protectFile(targetFile);
+  }
+
+  // Only create the old_agent_files folder + README if a backup was actually
+  // written during this run (i.e. ensureAgentsFile returned a backup filename).
+  const backupWasCreated =
+    agentsFileStatus !== "created" &&
+    agentsFileStatus !== "unchanged" &&
+    agentsFileStatus !== "recreated" &&
+    !agentsFileStatus.startsWith("migrated");
+
+  if (backupWasCreated) {
+    ensureBackupReadme();
   }
 
   const files = fs.readdirSync(target);
