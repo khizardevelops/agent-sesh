@@ -9,6 +9,9 @@ const {
   select,
   confirm,
   note,
+  log,
+  spinner,
+  cancel,
   isCancel,
   isTTY,
 } = require("@clack/prompts");
@@ -34,16 +37,18 @@ This folder is the project brain for AI agents working in this repository.
 ## Files
 
 - state.md: current implementation status and system shape.
+- pipeline.md: how work and data flow through the system end to end.
 - tasks.md: next actionable tasks.
 - last-session.md: handoff notes from the most recent session.
 - decisions.md: settled technical decisions and tradeoffs.
 - context.md: project intent, goals, and non-goals.
+- assumptions.md: what is being taken as true, and what still needs verification.
 - style.md: coding and writing style preferences.
 - roadmap.md: near-future direction.
 - constraints.md: hard rules and limits.
 - known-issues.md: known bugs, fragile areas, and technical debt.
 - glossary.md: project-specific terms.
-- project_commands.md: project-specific command reference.
+- commands.md: project-specific command reference.
 `,
   "state.md": `# State
 
@@ -55,11 +60,23 @@ Describe how the project works right now. Keep this present-tense and accurate. 
 
 ## Missing Or Partial
 
-## Pipeline And Flow
+## Invariants
+
+<!-- End-to-end flow belongs in pipeline.md, not here. -->
+`,
+  "pipeline.md": `# Pipeline
+
+Describe how work and data actually move through the system, end to end. Follow one real path rather than listing components.
+
+## Entry Points
+
+## Stages
+
+## Data Flow
 
 ## Side Effects
 
-## Invariants
+## Failure Modes And Recovery
 `,
   "tasks.md": `# Tasks
 
@@ -105,9 +122,17 @@ Explain why this project exists and what it is trying to achieve.
 
 ## Background
 
-## Assumptions
+<!-- What you are taking as true belongs in assumptions.md, not here. -->
+`,
+  "assumptions.md": `# Assumptions
+
+Record what this project takes as true but has not proven. An assumption written down can be challenged; an unwritten one silently breaks things.
+
+## Active Assumptions
 
 ## Needs Verification
+
+## Invalidated
 `,
   "roadmap.md": `# Roadmap
 
@@ -232,10 +257,10 @@ old_agent_files/
 ## Naming Scheme
 
 - Files are named \`OLD_{AGENTS|CLAUDE}_N.md\` where N is a sequential number.
-- **Numbering is based on last-modified date**: the oldest file is \`_1\`, the
-  next oldest is \`_2\`, and so on. The highest number is the most recent backup.
-- Files are **deduplicated by content**: if two backups have identical content,
-  only one copy is kept.
+- **Numbering is the order the backups were taken**: \`_1\` is the oldest, and
+  the highest number is the most recent. Existing backups are never renumbered.
+- Files are **deduplicated by content**: a pointer file whose content already
+  matches a stored backup is discarded instead of backed up again.
 
 ## When Backups Are Created
 
@@ -243,15 +268,37 @@ old_agent_files/
   differs from the default template.
 - Switching environments (e.g., from AGENTS.md to CLAUDE.md) when the pointer
   file has been customized.
+- When both AGENTS.md and CLAUDE.md exist with different custom content: the
+  file you are switching **to** is kept as-is, and the other one is backed up.
 
 Backups are **not** created when:
 - The pointer file matches the default agent-sesh template (either variant).
 - An identical backup already exists.
+
+Nothing here is ever deleted to make room for a new backup, and a file that
+cannot be read is left where it is rather than being discarded.
 `;
 
-function isAgentsDirectoryPopulated() {
-  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory())
+// ── small fs helpers ──────────────────────────────────────────────
+
+function isRegularFile(filePath) {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
     return false;
+  }
+}
+
+function isDirectory(dirPath) {
+  try {
+    return fs.statSync(dirPath).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isAgentsDirectoryPopulated() {
+  if (!isDirectory(target)) return false;
   const entries = fs.readdirSync(target);
   const meaningful = entries.filter(
     (e) => e !== "old_agent_files" && e !== "custom",
@@ -259,120 +306,72 @@ function isAgentsDirectoryPopulated() {
   return meaningful.length > 0;
 }
 
-function getBackupDir(fileName, { create = false } = {}) {
-  const subdir = fileName === "CLAUDE.md" ? "claude" : "agents";
-  const dir = path.join(target, "old_agent_files", subdir);
-  if (create) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return dir;
-}
+// ── git discovery ─────────────────────────────────────────────────
+//
+// Everything git-related is discovered by asking git, never by guessing at
+// `<cwd>/.git`. That guess broke three separate cases: worktrees and
+// submodules (where `.git` is a *file*), running from a subdirectory (where
+// there is no `.git` at all, and we used to offer to create a nested repo),
+// and repos using core.hooksPath (where `.git/hooks` is dead weight).
 
-function ensureBackupReadme() {
-  const oldAgentFilesDir = path.join(target, "old_agent_files");
-  fs.mkdirSync(oldAgentFilesDir, { recursive: true });
-
-  const readmePath = path.join(oldAgentFilesDir, "README.md");
-
-  if (!fs.existsSync(readmePath)) {
-    fs.writeFileSync(readmePath, oldAgentFilesReadme);
-  } else {
-    const existing = fs.readFileSync(readmePath, "utf8");
-    if (existing !== oldAgentFilesReadme) {
-      unlockFile(readmePath);
-      fs.writeFileSync(readmePath, oldAgentFilesReadme);
-    }
-  }
-
-  makeReadOnly(readmePath);
-
-  for (const subdir of ["claude", "agents"]) {
-    const subdirPath = path.join(oldAgentFilesDir, subdir);
-    fs.mkdirSync(subdirPath, { recursive: true });
-    const linkPath = path.join(subdirPath, "README.md");
-
-    try {
-      if (fs.existsSync(linkPath)) {
-        const stat = fs.lstatSync(linkPath);
-        if (stat.isSymbolicLink()) {
-          const target = fs.readlinkSync(linkPath);
-          if (target === path.join("..", "README.md")) continue;
-        }
-        fs.unlinkSync(linkPath);
-      }
-      fs.symlinkSync(path.join("..", "README.md"), linkPath);
-    } catch {
-      // Best-effort; some filesystems don't support symlinks
-    }
+function gitQuery(args) {
+  try {
+    return childProcess
+      .execFileSync("git", args, {
+        cwd: projectRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      .trim();
+  } catch {
+    return null;
   }
 }
 
-function getAvailableBackupPath(fileName) {
-  // Create the dir now — we are about to write a backup file.
-  const dir = getBackupDir(fileName, { create: true });
-  const base = fileName.replace(".md", "");
-  let index = 1;
-  let candidate = path.join(dir, `OLD_${base}_${index}.md`);
+let gitInfoCache;
 
-  while (fs.existsSync(candidate)) {
-    index += 1;
-    candidate = path.join(dir, `OLD_${base}_${index}.md`);
+function getGitInfo() {
+  if (gitInfoCache !== undefined) return gitInfoCache;
+
+  const top = gitQuery(["rev-parse", "--show-toplevel"]);
+  if (!top) {
+    gitInfoCache = null;
+    return gitInfoCache;
   }
 
-  return candidate;
+  const topDir = path.resolve(top);
+
+  // Hooks live in the *common* git dir so that linked worktrees share them.
+  const commonDir = gitQuery(["rev-parse", "--git-common-dir"]);
+  const gitDir = commonDir ? path.resolve(projectRoot, commonDir) : null;
+
+  // core.hooksPath overrides .git/hooks entirely (husky v5+, lefthook, …).
+  const configuredHooks = gitQuery(["config", "--get", "core.hooksPath"]);
+  const hooksDir = configuredHooks
+    ? path.resolve(topDir, configuredHooks)
+    : gitDir
+      ? path.join(gitDir, "hooks")
+      : null;
+
+  gitInfoCache = {
+    topDir,
+    gitDir,
+    hooksDir,
+    usesCustomHooksPath: Boolean(configuredHooks),
+    inSubdirectory: path.resolve(projectRoot) !== topDir,
+  };
+  return gitInfoCache;
 }
 
-function hasDuplicateBackup(fileName, contentToBackup) {
-  // Do NOT create the dir here — only check if it already exists.
-  const dir = getBackupDir(fileName);
-  if (!fs.existsSync(dir)) return false;
-
-  const base = fileName.replace(".md", "");
-  let index = 1;
-  let candidate = path.join(dir, `OLD_${base}_${index}.md`);
-
-  while (fs.existsSync(candidate)) {
-    try {
-      const backupContent = fs.readFileSync(candidate, "utf8");
-      if (backupContent === contentToBackup) {
-        return true;
-      }
-    } catch {
-      // Ignore read errors
-    }
-    index += 1;
-    candidate = path.join(dir, `OLD_${base}_${index}.md`);
-  }
-
-  return false;
-}
+// ── process helpers ───────────────────────────────────────────────
 
 function canPromptForElevation() {
   return Boolean(process.stdin.isTTY && process.stderr.isTTY);
 }
 
-function preflightSudo() {
-  if (process.platform === "win32") return true;
-
-  try {
-    if (process.getuid() === 0) return true;
-  } catch {}
-
-  if (!canPromptForElevation()) return false;
-
-  try {
-    childProcess.execFileSync("sudo", ["-v"], { stdio: "inherit" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function runQuiet(command, args) {
   try {
-    childProcess.execFileSync(command, args, {
-      stdio: "ignore",
-    });
+    childProcess.execFileSync(command, args, { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -389,25 +388,35 @@ function runWithElevation(command, args) {
   }
 
   try {
-    childProcess.execFileSync("sudo", [command, ...args], {
-      stdio: "inherit",
-    });
+    childProcess.execFileSync("sudo", [command, ...args], { stdio: "inherit" });
     return true;
   } catch {
     return false;
   }
 }
 
+// ── protection ────────────────────────────────────────────────────
+//
+// Protection is read-only permissions and nothing more. OS-level
+// immutability (chattr +i, chflags schg/uchg, deny-delete ACLs) is never
+// applied — it made the pointer file undeletable by git itself, which broke
+// pull/merge/checkout. The `unlock*` helpers below exist purely to strip
+// those flags off files created by versions <= 1.0.6.
+
 function makeReadOnly(filePath) {
+  let ok = true;
+
   try {
     fs.chmodSync(filePath, 0o444);
-  } catch {}
-
-  if (process.platform === "win32") {
-    runQuiet("attrib", ["+R", filePath]);
+  } catch {
+    ok = false;
   }
 
-  return true;
+  if (process.platform === "win32") {
+    ok = runQuiet("attrib", ["+R", filePath]) && ok;
+  }
+
+  return ok;
 }
 
 function makeWritable(filePath) {
@@ -437,19 +446,6 @@ function isLinuxImmutable(filePath) {
   }
 }
 
-function makeLinuxImmutable(filePath) {
-  if (process.platform !== "linux") {
-    return false;
-  }
-
-  if (isLinuxImmutable(filePath)) {
-    return true;
-  }
-
-  runWithElevation("chattr", ["+i", filePath]);
-  return isLinuxImmutable(filePath);
-}
-
 function unlockLinuxImmutable(filePath) {
   if (process.platform === "linux" && isLinuxImmutable(filePath)) {
     runWithElevation("chattr", ["-i", filePath]);
@@ -471,38 +467,6 @@ function getMacFlags(filePath) {
   } catch {
     return "";
   }
-}
-
-function makeMacImmutable(filePath) {
-  if (process.platform !== "darwin") {
-    return null;
-  }
-
-  let flags = getMacFlags(filePath);
-
-  if (flags.includes("schg")) {
-    return "system-immutable";
-  }
-
-  runWithElevation("chflags", ["schg", filePath]);
-  flags = getMacFlags(filePath);
-
-  if (flags.includes("schg")) {
-    return "system-immutable";
-  }
-
-  if (flags.includes("uchg")) {
-    return "user-immutable";
-  }
-
-  runWithElevation("chflags", ["uchg", filePath]);
-  flags = getMacFlags(filePath);
-
-  if (flags.includes("uchg")) {
-    return "user-immutable";
-  }
-
-  return null;
 }
 
 function unlockMacImmutable(filePath) {
@@ -531,33 +495,6 @@ function runPowerShell(script, filePath) {
   return runQuiet("powershell.exe", args) || runQuiet("pwsh", args);
 }
 
-function protectWindowsFile(filePath) {
-  if (process.platform !== "win32") {
-    return false;
-  }
-
-  const script = `
-param([string]$Path)
-$item = Get-Item -LiteralPath $Path -Force
-$item.IsReadOnly = $true
-$acl = Get-Acl -LiteralPath $Path
-$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$rights = [System.Security.AccessControl.FileSystemRights]::Write -bor [System.Security.AccessControl.FileSystemRights]::Delete
-$existingRules = @($acl.Access | Where-Object {
-  $_.IdentityReference.Value -eq $identity -and
-  $_.AccessControlType -eq "Deny" -and
-  (($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::Write) -or
-   ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::Delete))
-})
-foreach ($existingRule in $existingRules) { [void]$acl.RemoveAccessRule($existingRule) }
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, $rights, "Deny")
-$acl.AddAccessRule($rule)
-Set-Acl -LiteralPath $Path -AclObject $acl
-`;
-
-  return runPowerShell(script, filePath);
-}
-
 function unlockWindowsFile(filePath) {
   if (process.platform !== "win32") {
     return;
@@ -582,28 +519,268 @@ Set-Acl -LiteralPath $Path -AclObject $acl
   runPowerShell(script, filePath);
 }
 
-function getTemplateContent(fileName) {
-  return agentsFileContent.replace(/AGENTS\.md/g, fileName);
-}
-
-function unlockFile(filePath) {
+// Legacy-only, and deliberately lazy: this spawns lsattr / stat / PowerShell,
+// and on Windows a PowerShell cold start costs about a second. It runs only
+// after a normal filesystem operation has already failed, so a run that has
+// no legacy flags to strip never pays for it.
+function unlockFileDeep(filePath) {
   unlockLinuxImmutable(filePath);
   unlockMacImmutable(filePath);
   unlockWindowsFile(filePath);
   makeWritable(filePath);
 }
 
-function protectFile(filePath) {
-  makeReadOnly(filePath);
-  return "read-only";
+function withUnlockRetry(filePath, action) {
+  try {
+    return action();
+  } catch (err) {
+    if (!fs.existsSync(filePath)) throw err;
+    unlockFileDeep(filePath);
+    return action();
+  }
 }
 
+function writeFileSafe(filePath, content) {
+  withUnlockRetry(filePath, () => {
+    if (fs.existsSync(filePath)) makeWritable(filePath);
+    fs.writeFileSync(filePath, content);
+  });
+}
+
+function removeFileSafe(filePath) {
+  withUnlockRetry(filePath, () => {
+    fs.unlinkSync(filePath);
+  });
+}
+
+function moveFileSafe(srcPath, dstPath) {
+  withUnlockRetry(srcPath, () => {
+    fs.renameSync(srcPath, dstPath);
+  });
+}
+
+function protectFile(filePath) {
+  return makeReadOnly(filePath) ? "read-only" : "NOT APPLIED (permission denied)";
+}
+
+function getTemplateContent(fileName) {
+  return agentsFileContent.replace(/AGENTS\.md/g, fileName);
+}
+
+function isDefaultTemplate(content) {
+  return (
+    content === getTemplateContent("AGENTS.md") ||
+    content === getTemplateContent("CLAUDE.md")
+  );
+}
+
+// ── backups ───────────────────────────────────────────────────────
+
+let backupWasWritten = false;
+
+function getBackupDir(fileName, { create = false } = {}) {
+  const subdir = fileName === "CLAUDE.md" ? "claude" : "agents";
+  const dir = path.join(target, "old_agent_files", subdir);
+  if (create) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function backupBaseName(fileName) {
+  return fileName === "CLAUDE.md" ? "CLAUDE" : "AGENTS";
+}
+
+// Reads the directory rather than probing OLD_X_1, OLD_X_2, … in sequence.
+// The sequential probe stopped at the first gap, so deleting OLD_AGENTS_1
+// hid every later backup from the duplicate check and made the next backup
+// reuse a number that was already taken.
+function listBackups(fileName) {
+  const dir = getBackupDir(fileName);
+  if (!isDirectory(dir)) return [];
+
+  const base = backupBaseName(fileName);
+  const pattern = new RegExp(`^OLD_${base}_(\\d+)\\.md$`);
+  const found = [];
+
+  for (const entry of fs.readdirSync(dir)) {
+    const match = entry.match(pattern);
+    if (match) {
+      found.push({ path: path.join(dir, entry), index: Number(match[1]) });
+    }
+  }
+
+  return found.sort((a, b) => a.index - b.index);
+}
+
+function findDuplicateBackup(fileName, content) {
+  for (const backup of listBackups(fileName)) {
+    try {
+      if (fs.readFileSync(backup.path, "utf8") === content) return backup.path;
+    } catch {
+      // Unreadable backup: cannot compare, so assume it is not a match.
+    }
+  }
+  return null;
+}
+
+function getAvailableBackupPath(fileName) {
+  const dir = getBackupDir(fileName, { create: true });
+  const base = backupBaseName(fileName);
+  const used = new Set(listBackups(fileName).map((b) => b.index));
+
+  let index = 1;
+  while (used.has(index) || fs.existsSync(path.join(dir, `OLD_${base}_${index}.md`))) {
+    index += 1;
+  }
+
+  return path.join(dir, `OLD_${base}_${index}.md`);
+}
+
+function ensureBackupReadme() {
+  const oldAgentFilesDir = path.join(target, "old_agent_files");
+  fs.mkdirSync(oldAgentFilesDir, { recursive: true });
+
+  const readmePath = path.join(oldAgentFilesDir, "README.md");
+
+  if (!fs.existsSync(readmePath)) {
+    fs.writeFileSync(readmePath, oldAgentFilesReadme);
+  } else if (fs.readFileSync(readmePath, "utf8") !== oldAgentFilesReadme) {
+    writeFileSafe(readmePath, oldAgentFilesReadme);
+  }
+
+  makeReadOnly(readmePath);
+
+  for (const subdir of ["claude", "agents"]) {
+    const subdirPath = path.join(oldAgentFilesDir, subdir);
+    fs.mkdirSync(subdirPath, { recursive: true });
+    const linkPath = path.join(subdirPath, "README.md");
+
+    try {
+      // lstat rather than existsSync: a broken symlink still occupies the
+      // name, and existsSync follows the link and reports false.
+      let stat = null;
+      try {
+        stat = fs.lstatSync(linkPath);
+      } catch {}
+
+      if (stat) {
+        if (stat.isSymbolicLink()) {
+          const linkTarget = fs.readlinkSync(linkPath);
+          if (linkTarget === path.join("..", "README.md")) continue;
+        }
+        fs.unlinkSync(linkPath);
+      }
+      fs.symlinkSync(path.join("..", "README.md"), linkPath);
+    } catch {
+      // Best-effort; some filesystems and Windows configs disallow symlinks.
+    }
+  }
+}
+
+// The single funnel for destroying a pointer file. Nothing else in this
+// file is allowed to unlink or overwrite AGENTS.md / CLAUDE.md. Previously
+// the environment-switch path wrote straight over the target and deleted the
+// source, so a user with two hand-written pointer files lost one of them
+// outright, with no backup and no warning.
+function retirePointerFile(filePath, fileName) {
+  if (!isRegularFile(filePath)) {
+    return { action: "absent" };
+  }
+
+  let content;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch (err) {
+    // If it cannot be read it cannot be preserved, so it does not get destroyed.
+    return { action: "kept", reason: err.message };
+  }
+
+  if (isDefaultTemplate(content)) {
+    removeFileSafe(filePath);
+    return { action: "discarded" };
+  }
+
+  if (findDuplicateBackup(fileName, content)) {
+    removeFileSafe(filePath);
+    return { action: "already-backed-up" };
+  }
+
+  const backupPath = getAvailableBackupPath(fileName);
+  moveFileSafe(filePath, backupPath);
+  backupWasWritten = true;
+  return { action: "backed-up", backupName: path.basename(backupPath) };
+}
+
+// Older versions dropped OLD_AGENTS_*.md / OLD_CLAUDE_*.md into the project
+// root. Fold any stragglers into .agents/old_agent_files/.
+//
+// The previous implementation deleted every backup it could see and then
+// rewrote the survivors from memory, which permanently destroyed any backup
+// that happened to be unreadable, and lost the lot if a write failed midway.
+// This version writes the destination first and only then removes the
+// source, and never touches a file it could not read.
+function migrateRootBackups() {
+  const types = [
+    { pattern: /^OLD_CLAUDE_\d+\.md$/, name: "CLAUDE.md" },
+    { pattern: /^OLD_AGENTS_\d+\.md$/, name: "AGENTS.md" },
+  ];
+
+  const warnings = [];
+
+  for (const type of types) {
+    let rootFiles;
+    try {
+      rootFiles = fs
+        .readdirSync(projectRoot)
+        .filter((entry) => type.pattern.test(entry))
+        .sort();
+    } catch {
+      continue;
+    }
+
+    // Nothing stranded in the root: leave the existing backups untouched
+    // rather than renumbering them on every run.
+    if (rootFiles.length === 0) continue;
+
+    for (const entry of rootFiles) {
+      const srcPath = path.join(projectRoot, entry);
+      if (!isRegularFile(srcPath)) continue;
+
+      let content;
+      try {
+        content = fs.readFileSync(srcPath, "utf8");
+      } catch {
+        warnings.push(`Left ${entry} in place — it could not be read.`);
+        continue;
+      }
+
+      try {
+        if (findDuplicateBackup(type.name, content)) {
+          removeFileSafe(srcPath);
+          continue;
+        }
+
+        const destPath = getAvailableBackupPath(type.name);
+        fs.writeFileSync(destPath, content);
+        backupWasWritten = true;
+        removeFileSafe(srcPath);
+      } catch (err) {
+        warnings.push(`Could not migrate ${entry}: ${err.message}`);
+      }
+    }
+  }
+
+  return warnings;
+}
+
+// ── .agents directory ─────────────────────────────────────────────
+
 function ensureAgentsDirectory() {
-  if (fs.existsSync(target) && !fs.statSync(target).isDirectory()) {
-    console.error(
-      "\u274C Error: A .agents path already exists here, but it is not a folder.",
+  if (fs.existsSync(target) && !isDirectory(target)) {
+    throw new Error(
+      "A .agents path already exists here, but it is not a folder. Move it aside and re-run agent-sesh.",
     );
-    process.exit(1);
   }
 
   fs.mkdirSync(target, { recursive: true });
@@ -623,61 +800,162 @@ function ensureAgentsDirectory() {
     created += 1;
   }
 
-  return { created, existing };
+  return { created, existing, total: Object.keys(agentFiles).length };
 }
 
-function isDefaultTemplate(content) {
-  return (
-    content === getTemplateContent("AGENTS.md") ||
-    content === getTemplateContent("CLAUDE.md")
-  );
+function uniqueDestination(dir, entry) {
+  const ext = path.extname(entry);
+  const stem = ext ? entry.slice(0, -ext.length) : entry;
+
+  let candidate = path.join(dir, entry);
+  let suffix = 1;
+
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${stem}-${suffix}${ext}`);
+    suffix += 1;
+  }
+
+  return candidate;
 }
+
+function reinitAgentsDirectory() {
+  const standardFiles = new Set(Object.keys(agentFiles));
+  const reservedDirs = new Set(["old_agent_files", "custom"]);
+  const customDir = path.join(target, "custom");
+
+  const moved = [];
+  const warnings = [];
+  let customDirReady = false;
+
+  for (const entry of fs.readdirSync(target)) {
+    if (standardFiles.has(entry) || reservedDirs.has(entry)) continue;
+
+    // Created lazily so a reinit with nothing to move leaves no empty
+    // custom/ folder behind.
+    if (!customDirReady) {
+      fs.mkdirSync(customDir, { recursive: true });
+      customDirReady = true;
+    }
+
+    const srcPath = path.join(target, entry);
+    // renameSync silently replaces an existing destination, so a second
+    // reinit used to overwrite the first reinit's copy of the same filename.
+    const dstPath = uniqueDestination(customDir, entry);
+
+    try {
+      moveFileSafe(srcPath, dstPath);
+      moved.push(path.basename(dstPath));
+    } catch (err) {
+      warnings.push(`Could not move ${entry}: ${err.message}`);
+    }
+  }
+
+  return { moved, warnings };
+}
+
+// ── pointer file ──────────────────────────────────────────────────
 
 function ensureAgentsFile(filePath, fileName) {
   const content = getTemplateContent(fileName);
+
+  if (fs.existsSync(filePath) && !isRegularFile(filePath)) {
+    throw new Error(
+      `${fileName} exists but is not a regular file. Move it aside and re-run agent-sesh.`,
+    );
+  }
+
   if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, content);
+    writeFileSafe(filePath, content);
     return "created";
   }
 
-  const fileStats = fs.statSync(filePath);
-  const existingContent = fileStats.isFile()
-    ? fs.readFileSync(filePath, "utf8")
-    : null;
-
-  if (existingContent === content) {
-    return "unchanged";
-  }
-
-  if (existingContent && isDefaultTemplate(existingContent)) {
-    unlockFile(filePath);
-    fs.writeFileSync(filePath, content);
-    return "recreated";
-  }
-
-  if (existingContent && hasDuplicateBackup(fileName, existingContent)) {
-    unlockFile(filePath);
-    fs.writeFileSync(filePath, content);
-    return "recreated";
-  }
-
-  const backupPath = getAvailableBackupPath(fileName);
-  unlockFile(filePath);
-
+  let existing;
   try {
-    fs.renameSync(filePath, backupPath);
+    existing = fs.readFileSync(filePath, "utf8");
   } catch (err) {
-    if (isLinuxImmutable(filePath)) {
+    throw new Error(
+      `Cannot read ${fileName} (${err.message}). Fix its permissions and re-run agent-sesh.`,
+    );
+  }
+
+  if (existing === content) return "unchanged";
+
+  const retired = retirePointerFile(filePath, fileName);
+
+  if (retired.action === "kept") {
+    throw new Error(
+      `Refusing to replace ${fileName}: it could not be read (${retired.reason}), so its contents cannot be preserved.`,
+    );
+  }
+
+  writeFileSafe(filePath, content);
+
+  if (retired.action === "backed-up") return retired.backupName;
+  return retired.action === "already-backed-up"
+    ? "recreated-duplicate"
+    : "recreated-template";
+}
+
+// Decides what the pointer file should end up containing when switching
+// environments, without ever discarding hand-written content.
+function retargetPointerFile(targetFile, targetName, otherFile, otherName) {
+  if (!isRegularFile(otherFile)) {
+    return { status: ensureAgentsFile(targetFile, targetName) };
+  }
+
+  let otherContent;
+  try {
+    otherContent = fs.readFileSync(otherFile, "utf8");
+  } catch (err) {
+    throw new Error(
+      `Cannot read ${otherName} (${err.message}). Fix its permissions and re-run agent-sesh.`,
+    );
+  }
+
+  let targetContent = null;
+  if (isRegularFile(targetFile)) {
+    try {
+      targetContent = fs.readFileSync(targetFile, "utf8");
+    } catch (err) {
       throw new Error(
-        `${fileName} is immutable. Run \`sudo chattr -i ${fileName}\`, then run agent-sesh again.`,
+        `Cannot read ${targetName} (${err.message}). Fix its permissions and re-run agent-sesh.`,
       );
     }
-
-    throw err;
   }
 
-  fs.writeFileSync(filePath, content);
-  return path.basename(backupPath);
+  // Rewrite references so the mirrored file talks about itself. Copying the
+  // bytes verbatim left CLAUDE.md saying "Do not edit this AGENTS.md file",
+  // which is exactly the instruction that stops an agent overwriting it.
+  const mirrored = otherContent.split(otherName).join(targetName);
+
+  const otherIsCustom = !isDefaultTemplate(otherContent);
+  const targetIsCustom =
+    targetContent !== null &&
+    !isDefaultTemplate(targetContent) &&
+    targetContent !== mirrored;
+
+  if (otherIsCustom && targetIsCustom) {
+    // Both are hand-written and they differ. Keep the file the user is
+    // switching *to* and archive the other one.
+    const retired = retirePointerFile(otherFile, otherName);
+    return {
+      status: "kept existing",
+      conflict: { otherName, retired },
+    };
+  }
+
+  if (otherIsCustom) {
+    // Carry the customisations across, then archive the original so the
+    // untouched bytes stay recoverable.
+    writeFileSafe(targetFile, mirrored);
+    const retired = retirePointerFile(otherFile, otherName);
+    return { status: `migrated from ${otherName}`, retired };
+  }
+
+  // The other file is just a stock template — nothing worth carrying over.
+  const retired = retirePointerFile(otherFile, otherName);
+  const status = ensureAgentsFile(targetFile, targetName);
+  return { status, retired };
 }
 
 function getAgentsDirectoryStatus(created, existing, total) {
@@ -692,367 +970,566 @@ function getAgentsDirectoryStatus(created, existing, total) {
   return `ready (${created} created, ${existing} existing)`;
 }
 
+// A status that is not one of the known keywords is the filename of the
+// backup that was just written.
+function isBackupStatus(status) {
+  return status.startsWith("OLD_");
+}
+
 function getAgentsFileStatus(status) {
-  if (status === "created") {
-    return "created";
-  }
-
-  if (status === "unchanged") {
-    return "already configured";
-  }
-
-  if (status === "recreated") {
-    return "recreated (backup already exists)";
-  }
-
-  if (status.startsWith("migrated from")) {
-    return status;
-  }
-
+  if (status === "created") return "created";
+  if (status === "unchanged") return "already configured";
+  if (status === "recreated-template")
+    return "recreated (previous file was an unmodified template)";
+  if (status === "recreated-duplicate")
+    return "recreated (an identical backup already exists)";
+  if (status === "kept existing") return "kept your existing file";
+  if (status.startsWith("migrated from")) return status;
   return `created; previous file saved as ${status}`;
 }
 
-function getProtectionStatus(status) {
-  return status;
+// ── git hooks ─────────────────────────────────────────────────────
+
+const HOOK_MARKER_START = "# >>> agent-sesh >>>";
+const HOOK_MARKER_END = "# <<< agent-sesh <<<";
+const HOOK_NAMES = ["post-merge", "post-checkout"];
+
+function shellQuote(value) {
+  return `'${String(value).split("'").join("'\\''")}'`;
 }
 
-function reinitAgentsDirectory() {
-  const standardFiles = new Set(Object.keys(agentFiles));
-  const excludeDirs = new Set(["old_agent_files", "custom"]);
-  let movedCount = 0;
+function buildHookBlock(relDir) {
+  const quoted = ["AGENTS.md", "CLAUDE.md"]
+    .map((name) => shellQuote(relDir ? `${relDir}/${name}` : name))
+    .join(" ");
 
-  const entries = fs.readdirSync(target);
-  const customDir = path.join(target, "custom");
-  fs.mkdirSync(customDir, { recursive: true });
+  return [
+    HOOK_MARKER_START,
+    "# Re-applies read-only protection to agent-sesh pointer files.",
+    "# Managed by agent-sesh; edits inside this block will be overwritten.",
+    `for agent_sesh_file in ${quoted}; do`,
+    '    if [ -f "$agent_sesh_file" ]; then',
+    '        chmod 444 "$agent_sesh_file" 2>/dev/null || true',
+    "    fi",
+    "done",
+    "unset agent_sesh_file",
+    HOOK_MARKER_END,
+  ].join("\n");
+}
 
-  for (const entry of entries) {
-    if (standardFiles.has(entry)) continue;
-    if (excludeDirs.has(entry)) continue;
+function stripHookBlock(source) {
+  const start = source.indexOf(HOOK_MARKER_START);
+  if (start === -1) return null;
 
-    const srcPath = path.join(target, entry);
-    const dstPath = path.join(customDir, entry);
+  const end = source.indexOf(HOOK_MARKER_END, start);
+  if (end === -1) return null;
 
+  return source.slice(0, start) + source.slice(end + HOOK_MARKER_END.length);
+}
+
+function isShellScript(source) {
+  const firstLine = source.split("\n", 1)[0] || "";
+  if (!firstLine.startsWith("#!")) return false;
+  return /\b(sh|bash|dash|zsh|ksh)\b/.test(firstLine);
+}
+
+// Never clobbers a hook it does not own. git-lfs installs post-merge and
+// post-checkout — exactly the two hooks here — and overwriting them silently
+// stops LFS files being materialised on pull and checkout.
+function installHook(hooksDir, name, block) {
+  const hookPath = path.join(hooksDir, name);
+
+  const finish = () => {
+    if (process.platform !== "win32") {
+      try {
+        fs.chmodSync(hookPath, 0o755);
+      } catch {}
+    }
+  };
+
+  if (!fs.existsSync(hookPath)) {
+    fs.writeFileSync(hookPath, `#!/bin/sh\n${block}\n`);
+    finish();
+    return "installed";
+  }
+
+  const source = fs.readFileSync(hookPath, "utf8");
+  const withoutOurs = stripHookBlock(source);
+
+  if (withoutOurs !== null) {
+    const rebuilt = `${withoutOurs.replace(/\s*$/, "")}\n${block}\n`;
+    if (rebuilt !== source) fs.writeFileSync(hookPath, rebuilt);
+    finish();
+    return "updated";
+  }
+
+  if (!isShellScript(source)) {
+    return "foreign";
+  }
+
+  fs.writeFileSync(hookPath, `${source.replace(/\s*$/, "")}\n\n${block}\n`);
+  finish();
+  return "appended";
+}
+
+const NO_REPOSITORY_WARNING = [
+  "No git repository here, so the protection hooks were not installed.",
+  "",
+  "Without them, AGENTS.md / CLAUDE.md lose their read-only flag whenever",
+  "git replaces the file (pull, merge, checkout). Nothing else breaks —",
+  "run `git init` and then agent-sesh again to install them.",
+].join("\n");
+
+// Asked up front, alongside the other questions, because it decides whether
+// hooks can be installed at all. Asking it after the files were already
+// written made it read as an afterthought.
+async function ensureGitRepository() {
+  if (getGitInfo()) return null;
+
+  if (!interactive) return NO_REPOSITORY_WARNING;
+
+  const choice = await select({
+    message: "No git repository here. Create one so the hooks can be installed?",
+    options: [
+      {
+        value: "yes",
+        label: "Yes — run git init",
+        hint: "recommended",
+      },
+      { value: "no", label: "No — I'll do it later" },
+    ],
+  });
+
+  if (isCancel(choice) || choice !== "yes") {
+    return NO_REPOSITORY_WARNING;
+  }
+
+  try {
+    childProcess.execFileSync("git", ["init", "--initial-branch=main"], {
+      cwd: projectRoot,
+      stdio: "ignore",
+    });
+  } catch {
+    // --initial-branch needs git >= 2.28; fall back for older installs.
     try {
-      unlockFile(srcPath);
-      fs.renameSync(srcPath, dstPath);
-      movedCount += 1;
+      childProcess.execFileSync("git", ["init"], {
+        cwd: projectRoot,
+        stdio: "ignore",
+      });
     } catch (err) {
-      console.warn(
-        `\u26A0\uFE0F Warning: Could not move ${entry}: ${err.message}`,
-      );
+      return `git init failed (${err.message}). Run it manually, then re-run agent-sesh.`;
     }
   }
 
-  return movedCount;
+  gitInfoCache = undefined;
+
+  return getGitInfo()
+    ? null
+    : "git init ran but the repository could not be read.";
 }
 
-function migrateRootBackups() {
-  const types = [
-    { pattern: /^OLD_CLAUDE_\d+\.md$/, name: "CLAUDE.md", base: "CLAUDE" },
-    { pattern: /^OLD_AGENTS_\d+\.md$/, name: "AGENTS.md", base: "AGENTS" },
-  ];
+// Always runs when a repository exists: hooks are reinstalled or refreshed on
+// every run, so a repo whose agent-sesh hooks were deleted heals by itself
+// without needing to ask.
+function installGitHooks() {
+  const warnings = [];
+  const notes = [];
+  const installed = [];
+  const giveUp = (warning) => ({ warnings: [warning], notes, installed });
+  const git = getGitInfo();
 
-  for (const type of types) {
-    // Only use the existing destDir for scanning — don't create it yet.
-    const destDir = getBackupDir(type.name);
+  if (!git) {
+    return { warnings, notes, installed };
+  }
 
-    const allFiles = [];
+  if (!git.hooksDir) {
+    return giveUp("Could not locate the git hooks directory; hooks were not installed.");
+  }
 
-    for (const dir of [projectRoot, destDir]) {
-      if (!fs.existsSync(dir)) continue;
-      try {
-        for (const entry of fs.readdirSync(dir)) {
-          if (type.pattern.test(entry)) {
-            const filePath = path.join(dir, entry);
-            if (!allFiles.includes(filePath)) {
-              allFiles.push(filePath);
-            }
-          }
-        }
-      } catch {
-        // Directory might not exist yet
-      }
-    }
+  if (git.inSubdirectory) {
+    notes.push(
+      `Files were created in this folder, but the git repository root is ${git.topDir}.\nHooks were installed on that repository.`,
+    );
+  }
 
-    if (allFiles.length === 0) continue;
+  if (git.usesCustomHooksPath) {
+    notes.push(`This repository sets core.hooksPath, so hooks were installed in ${git.hooksDir}.`);
+  }
 
-    const seen = new Set();
-    const uniqueEntries = [];
+  try {
+    fs.mkdirSync(git.hooksDir, { recursive: true });
+  } catch (err) {
+    return giveUp(`Could not create ${git.hooksDir}: ${err.message}`);
+  }
 
-    for (const filePath of allFiles) {
-      try {
-        const content = fs.readFileSync(filePath, "utf8");
-        if (!seen.has(content)) {
-          seen.add(content);
-          const mtime = fs.statSync(filePath).mtimeMs;
-          uniqueEntries.push({ content, mtime });
-        }
-      } catch {
-        // Skip unreadable files
-      }
-    }
+  const relDir = path
+    .relative(git.topDir, path.resolve(projectRoot))
+    .split(path.sep)
+    .join("/");
+  const block = buildHookBlock(relDir);
 
-    uniqueEntries.sort((a, b) => a.mtime - b.mtime);
+  const foreign = [];
+  const appended = [];
+  const failed = [];
 
-    for (const filePath of allFiles) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch {
-        // Best-effort
-      }
-    }
-
-    // Create the dir only if there is actual content to write.
-    if (uniqueEntries.length > 0) {
-      const writeDir = getBackupDir(type.name, { create: true });
-      for (let i = 0; i < uniqueEntries.length; i++) {
-        const finalPath = path.join(writeDir, `OLD_${type.base}_${i + 1}.md`);
-        fs.writeFileSync(finalPath, uniqueEntries[i].content);
-      }
+  for (const name of HOOK_NAMES) {
+    try {
+      const result = installHook(git.hooksDir, name, block);
+      if (result === "foreign") foreign.push(name);
+      else installed.push(name);
+      if (result === "appended") appended.push(name);
+    } catch (err) {
+      failed.push(`${name} (${err.message})`);
     }
   }
+
+  if (appended.length) {
+    notes.push(
+      `Existing ${appended.join(" and ")} hook${appended.length > 1 ? "s were" : " was"} kept; the agent-sesh block was appended.`,
+    );
+  }
+
+  if (foreign.length) {
+    warnings.push(
+      [
+        `Left the existing ${foreign.join(" and ")} hook${foreign.length > 1 ? "s" : ""} untouched.`,
+        "",
+        "The file is not a shell script, so the protection block was not added.",
+        "Add this to it by hand if you want protection re-applied after git operations:",
+        "",
+        block,
+      ].join("\n"),
+    );
+  }
+
+  if (failed.length) {
+    warnings.push(`Could not install hook(s): ${failed.join(", ")}`);
+  }
+
+  return { warnings, notes, installed };
+}
+// ── presentation ──────────────────────────────────────────────────
+
+const VERSION = (() => {
+  try {
+    return require("./package.json").version;
+  } catch {
+    return "unknown";
+  }
+})();
+
+// Tiny inline colour helper so the tool stays on a single dependency.
+// Honours NO_COLOR (https://no-color.org) and never colours a redirected
+// stream, so piped output stays clean.
+const useColour =
+  !process.env.NO_COLOR &&
+  process.env.TERM !== "dumb" &&
+  Boolean(process.stdout.isTTY);
+
+const paint = (code) => (text) =>
+  useColour ? `\u001B[${code}m${text}\u001B[0m` : String(text);
+
+const bold = paint("1");
+const dim = paint("2");
+const green = paint("32");
+const yellow = paint("33");
+const cyan = paint("36");
+const grey = paint("90");
+
+// A pty that was never given a window size reports 0 columns, and the
+// prompt library's box drawing collapses to one character per line when it
+// believes the terminal has no width. Give it something sane to work with.
+if (process.stdout.isTTY && !process.stdout.columns) {
+  process.stdout.columns = 80;
 }
 
-// ── UI functions (using @clack/prompts) ──────────────────────────
+// The prompt library hides the cursor while it draws. If the process dies
+// between hide and restore, the user is left with an invisible cursor in
+// their shell, so restore it unconditionally on the way out.
+function restoreCursor() {
+  if (process.stdout.isTTY) process.stdout.write("\u001B[?25h");
+}
+
+process.on("exit", restoreCursor);
+process.on("SIGINT", () => {
+  restoreCursor();
+  process.exit(130);
+});
+
+function alignRows(rows) {
+  const width = Math.max(...rows.map(([label]) => label.length));
+  return rows
+    .map(([label, value]) => `${grey(label.padEnd(width))}   ${value}`)
+    .join("\n");
+}
+
+function tildePath(absolute) {
+  const home = require("os").homedir();
+  return home && absolute.startsWith(home)
+    ? `~${absolute.slice(home.length)}`
+    : absolute;
+}
+
+// Keeps the tail, which is the part that identifies the folder. A wrapped
+// path turns the summary box into three ragged lines.
+function shortenPath(absolute) {
+  const text = tildePath(absolute);
+  const max = Math.max(28, Math.min(60, (process.stdout.columns || 80) - 26));
+  return text.length <= max ? text : `…${text.slice(text.length - (max - 1))}`;
+}
+
+// A short read of what already exists here, shown before the first question
+// so the choice is made with the current state visible.
+function describeWorkspace() {
+  const rows = [];
+
+  rows.push(["Project", bold(path.basename(projectRoot) || projectRoot)]);
+  rows.push(["Location", dim(shortenPath(projectRoot))]);
+
+  const templates = Object.keys(agentFiles);
+  if (isDirectory(target)) {
+    const present = fs
+      .readdirSync(target)
+      .filter((entry) => templates.includes(entry)).length;
+    rows.push([
+      "Brain",
+      present === templates.length
+        ? green(`.agents/ · ${present} files`)
+        : yellow(`.agents/ · ${present}/${templates.length} files`),
+    ]);
+  } else {
+    rows.push(["Brain", dim("not set up yet")]);
+  }
+
+  const hasAgents = isRegularFile(agentsFile);
+  const hasClaude = isRegularFile(claudeFile);
+  rows.push([
+    "Pointer",
+    hasAgents && hasClaude
+      ? yellow("AGENTS.md + CLAUDE.md")
+      : hasAgents
+        ? green("AGENTS.md")
+        : hasClaude
+          ? green("CLAUDE.md")
+          : dim("none"),
+  ]);
+
+  const git = getGitInfo();
+  rows.push([
+    "Git",
+    git
+      ? git.inSubdirectory
+        ? yellow(`subfolder of ${shortenPath(git.topDir)}`)
+        : green("repository detected")
+      : dim("no repository"),
+  ]);
+
+  return alignRows(rows);
+}
+
+// ── UI ────────────────────────────────────────────────────────────
 
 let interactive = true;
 
-async function selectEnvironment() {
-  const agentsDirExists =
-    fs.existsSync(target) && fs.statSync(target).isDirectory();
-  const agentsDirPopulated =
-    agentsDirExists && isAgentsDirectoryPopulated();
-  const agentsFileExists =
-    fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
-  const claudeFileExists =
-    fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
-  const isSwitch = agentsDirExists && (agentsFileExists || claudeFileExists);
+function environmentOptions() {
+  const hasAgents = isRegularFile(agentsFile);
+  const hasClaude = isRegularFile(claudeFile);
 
-  if (agentsDirPopulated) {
+  return [
+    {
+      value: "universal",
+      label: "\u{1F7E2} Universal — AGENTS.md",
+      hint: hasAgents
+        ? "current · Codex, Cursor, Windsurf…"
+        : "Codex, Cursor, Windsurf…",
+    },
+    {
+      value: "claude",
+      label: "\u{1F7E0} Claude Code — CLAUDE.md",
+      hint: hasClaude ? "current" : "Anthropic Claude Code",
+    },
+  ];
+}
+
+async function chooseEnvironment(isSwitch) {
+  const env = await select({
+    message: isSwitch
+      ? "Which environment do you want to switch to?"
+      : "Which environment do you want to set up?",
+    options: environmentOptions(),
+    initialValue: isRegularFile(claudeFile) ? "claude" : "universal",
+  });
+  return isCancel(env) ? null : env;
+}
+
+async function selectEnvironment() {
+  const isSwitch =
+    isDirectory(target) && (isRegularFile(agentsFile) || isRegularFile(claudeFile));
+
+  if (isAgentsDirectoryPopulated()) {
     const shouldReinit = await select({
-      message: "Want to reinitialise the current .agents folder?",
+      message: "This project already has a brain. What do you want to do?",
       options: [
         {
-          value: "yes",
-          label: "\u{1F535} Yes, reinitialise .agents/",
-          hint: "your custom files & existing content will be preserved",
+          value: "no",
+          label: "\u{1F504} Switch environment",
+          hint: "keep everything, just change the pointer file",
         },
-        { value: "no", label: "\u{1f504} No, just switch environment" },
+        {
+          value: "yes",
+          label: "\u{1F535} Reinitialise .agents/",
+          hint: "restore the standard layout · your content is preserved",
+        },
       ],
+      initialValue: "no",
     });
-    if (isCancel(shouldReinit)) process.exit(0);
 
+    if (isCancel(shouldReinit)) return null;
     if (shouldReinit === "yes") return "reinit";
   }
 
-  const verb = isSwitch ? "switch to" : "set up";
-  const env = await select({
-    message: `Which AI coding agent environment do you want to ${verb}?`,
-    options: [
-      {
-        value: "universal",
-        label: "\u{1F7E2} Universal (AGENTS.md)",
-        hint: "Codex, Windsurf, Cursor, etc\u2026",
-      },
-      {
-        value: "claude",
-        label: "\u{1F7E0} Claude Code (CLAUDE.md)",
-      },
-    ],
-  });
-  if (isCancel(env)) process.exit(0);
-  return env;
+  return chooseEnvironment(isSwitch);
 }
 
 async function confirmReinit() {
   const proceed = await confirm({
     message:
-      "Proceed? Custom files and folders in .agents/ will be moved to .agents/custom/",
+      "Proceed? Custom files and folders in .agents/ move to .agents/custom/",
+    initialValue: true,
   });
-  if (isCancel(proceed)) process.exit(0);
-  return proceed;
+  return isCancel(proceed) ? null : proceed;
 }
 
-async function installGitHooks() {
-  const dotGit = path.join(projectRoot, ".git");
-
-  if (!fs.existsSync(dotGit) || !fs.statSync(dotGit).isDirectory()) {
-    if (!interactive) return null;
-
-    const choice = await select({
-      message: "No Git repository found. Run git init now?",
-      options: [
-        {
-          value: "yes",
-          label: "Yes — run git init",
-          hint: "recommended",
-        },
-        { value: "no", label: "No — I'll do it later" },
-      ],
-    });
-    if (isCancel(choice)) return null;
-
-    if (choice !== "yes") {
-      return [
-        "File-protection git hooks were not installed.",
-        "",
-        "Skipping this and then committing changes will cause",
-        "branch merges and GitHub Actions to fail.",
-        "",
-        "If you plan to use git, run:",
-        "  git init --initial-branch=main",
-        "  npx agent-sesh",
-        "",
-        "If you never plan to use git, ignore this message.",
-      ].join("\n");
-    }
-
-    try {
-      childProcess.execSync("git init --initial-branch=main", {
-        cwd: projectRoot,
-        stdio: "ignore",
-      });
-    } catch (err) {
-      return [
-        "git init failed. Run manually:",
-        `  git init --initial-branch=main`,
-        `  npx agent-sesh`,
-      ].join("\n");
-    }
+function bail(message) {
+  if (interactive) {
+    cancel(message);
+  } else {
+    console.log(`${grey(`[agent-sesh v${VERSION}]`)} ${message}`);
   }
+  process.exit(130);
+}
 
-  const hooksDir = path.join(dotGit, "hooks");
-  if (!fs.existsSync(hooksDir)) return null;
-
-  const hookScript = `#!/bin/sh
-# agent-sesh: lock down pointer files after git operations
-if [ -f "AGENTS.md" ]; then
-    chmod 444 AGENTS.md 2>/dev/null
-fi
-if [ -f "CLAUDE.md" ]; then
-    chmod 444 CLAUDE.md 2>/dev/null
-fi
-`;
-
-  for (const name of ["post-merge", "post-checkout"]) {
-    const hookPath = path.join(hooksDir, name);
-    try {
-      fs.writeFileSync(hookPath, hookScript);
-      if (process.platform !== "win32") {
-        fs.chmodSync(hookPath, 0o755);
-      }
-    } catch {
-      // Best-effort: hook installation should never crash the main flow
-    }
-  }
-
-  return null;
+function nextSteps(targetName) {
+  return [
+    `${cyan("1")}  Start your AI session with ${bold(`@${targetName}`)}`,
+    `${cyan("2")}  Fill in ${bold(".agents/context.md")} and ${bold(".agents/state.md")}`,
+    `${cyan("3")}  Ask the AI to update ${bold(".agents/")} before the session ends`,
+  ].join("\n");
 }
 
 // ── main ──────────────────────────────────────────────────────────
+
+const HELP_TEXT = `${bold("agent-sesh")} ${grey(`v${VERSION}`)} — stateful AI coding sessions
+
+${bold("Usage")}
+  npx agent-sesh [options]
+
+${bold("Options")}
+  --uni           Set up / switch to Universal (AGENTS.md) — Codex, Cursor, Windsurf…
+  --claude        Set up / switch to Claude Code (CLAUDE.md)
+  -v, --version   Print the version and exit
+  -h, --help      Show this help
+
+${bold("Run with no options")} for the interactive setup.
+`;
 
 async function main() {
   const args = process.argv.slice(2);
 
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`Usage: npx agent-sesh [options]
-
-Options:
-  --uni      Directly setup/switch to Universal (AGENTS.md) — Codex, Windsurf, Cursor, etc…
-  --claude   Directly setup/switch to Claude Code
-  -h, --help Show help description
-`);
-    process.exit(0);
+    console.log(HELP_TEXT);
+    return;
   }
 
-  const hasUnknownFlag = args.some((a) => a.startsWith("-") && a !== "--uni" && a !== "--claude");
-  if (hasUnknownFlag) {
-    console.error(`\n  \u2716  Wrong flag or a wrong command\n`);
-    console.error(`  \u2139  Usage: npx agent-sesh [--uni | --claude | --help]\n`);
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(VERSION);
+    return;
+  }
+
+  const knownFlags = new Set(["--uni", "--claude"]);
+  const unknown = args.filter((arg) => !knownFlags.has(arg));
+
+  if (unknown.length > 0) {
+    console.error(`\n  ✖  Unrecognised argument: ${unknown.join(" ")}\n`);
+    console.error(`  ℹ  Usage: npx agent-sesh [--uni | --claude | --version | --help]\n`);
     process.exit(1);
   }
 
+  const wantsUniversal = args.includes("--uni");
+  const wantsClaude = args.includes("--claude");
+
+  if (wantsUniversal && wantsClaude) {
+    console.error(`\n  ✖  --uni and --claude cannot be combined; pick one.\n`);
+    process.exit(1);
+  }
+
+  // isTTY is a predicate taking a stream, not a boolean. Treating it as a
+  // boolean made this check dead code, so a non-interactive run rendered a
+  // prompt into a stream nobody was reading, created nothing, and exited 0.
+  const hasTTY = isTTY(process.stdin) && isTTY(process.stdout);
+  interactive = !wantsUniversal && !wantsClaude && hasTTY;
+
+  const tag = grey(`[agent-sesh v${VERSION}]`);
   let selectedEnv;
 
-  if (args.includes("--uni")) {
-    interactive = false;
+  if (wantsUniversal) {
     selectedEnv = "universal";
-  } else if (args.includes("--claude")) {
-    interactive = false;
+    console.log(`${tag} Setting up Universal (AGENTS.md)…`);
+  } else if (wantsClaude) {
     selectedEnv = "claude";
-  } else if (!isTTY) {
+    console.log(`${tag} Setting up Claude Code (CLAUDE.md)…`);
+  } else if (!hasTTY) {
     selectedEnv = "universal";
+    console.log(
+      `${tag} No interactive terminal detected — defaulting to Universal (AGENTS.md). Pass --claude for Claude Code.`,
+    );
   } else {
-    intro("\u{1F9E0} agent-sesh — Project Brain Setup");
-
+    intro(`${bold("\u{1F9E0} agent-sesh")}  ${grey(`v${VERSION}`)}`);
+    note(describeWorkspace(), "Workspace");
     selectedEnv = await selectEnvironment();
+    if (selectedEnv === null) bail("Cancelled.");
   }
+
+  const warnings = [];
+  const infoNotes = [];
 
   if (selectedEnv === "reinit") {
     const proceed = await confirmReinit();
+    if (proceed === null) bail("Cancelled.");
+
     if (!proceed) {
-      outro("\u{1F6AB} Reinit cancelled.");
-      process.exit(0);
+      outro(`${yellow("Reinit cancelled.")} Nothing was changed.`);
+      return;
     }
 
-    const movedCount = reinitAgentsDirectory();
-    if (movedCount > 0) {
-      note(
-        `${movedCount} custom file(s) and/or folder(s) moved to .agents/custom/`,
-        "Reinitialised"
+    const { moved, warnings: moveWarnings } = reinitAgentsDirectory();
+    warnings.push(...moveWarnings);
+
+    if (moved.length > 0) {
+      log.step(
+        `Moved ${bold(String(moved.length))} custom item(s) to ${bold(".agents/custom/")}`,
       );
     }
 
-    const hadAgents =
-      fs.existsSync(agentsFile) && fs.statSync(agentsFile).isFile();
-    const hadClaude =
-      fs.existsSync(claudeFile) && fs.statSync(claudeFile).isFile();
+    const hadAgents = isRegularFile(agentsFile);
+    const hadClaude = isRegularFile(claudeFile);
 
-    let reinitCreatedBackup = false;
     for (const [file, name] of [
       [agentsFile, "AGENTS.md"],
       [claudeFile, "CLAUDE.md"],
     ]) {
-      if (fs.existsSync(file) && fs.statSync(file).isFile()) {
-        const content = fs.readFileSync(file, "utf8");
-        // If the file is a default agent-sesh template, just delete it —
-        // no backup needed (and no old_agent_files folder created).
-        if (isDefaultTemplate(content)) {
-          unlockFile(file);
-          try {
-            fs.unlinkSync(file);
-          } catch {}
-          continue;
-        }
-        if (!hasDuplicateBackup(name, content)) {
-          const backupPath = getAvailableBackupPath(name);
-          unlockFile(file);
-          try {
-            fs.renameSync(file, backupPath);
-            reinitCreatedBackup = true;
-          } catch (err) {
-            console.warn(
-              `\u26A0\uFE0F Could not back up ${name}: ${err.message}`,
-            );
-          }
-        } else {
-          unlockFile(file);
-          try {
-            fs.unlinkSync(file);
-          } catch {}
-        }
+      const retired = retirePointerFile(file, name);
+      if (retired.action === "kept") {
+        warnings.push(`Left ${name} in place — it could not be read (${retired.reason}).`);
       }
     }
 
-    if (reinitCreatedBackup) {
-      ensureBackupReadme();
+    if (hadAgents && hadClaude) {
+      selectedEnv = interactive ? await chooseEnvironment(true) : "universal";
+      if (selectedEnv === null) bail("Cancelled.");
+    } else {
+      selectedEnv = hadClaude ? "claude" : "universal";
     }
-
-    selectedEnv = hadClaude && !hadAgents ? "claude" : "universal";
-  }
-
-  for (const f of [agentsFile, claudeFile]) {
-    if (fs.existsSync(f)) unlockFile(f);
   }
 
   const targetFile = selectedEnv === "universal" ? agentsFile : claudeFile;
@@ -1060,102 +1537,114 @@ Options:
   const targetName = selectedEnv === "universal" ? "AGENTS.md" : "CLAUDE.md";
   const otherName = selectedEnv === "universal" ? "CLAUDE.md" : "AGENTS.md";
 
-  const { created, existing } = ensureAgentsDirectory();
-  migrateRootBackups();
+  // Every question is asked before anything is written, so the run is
+  // "answer, then watch it work" rather than being interrupted afterwards.
+  const repositoryWarning = await ensureGitRepository();
 
-  let agentsFileStatus;
+  const progress = interactive ? spinner() : null;
+  if (progress) progress.start("Building the project brain");
+
+  let created;
+  let existing;
+  let total;
+  let result;
   let protectionStatus;
+  let hooks;
 
-  if (fs.existsSync(otherFile) && fs.statSync(otherFile).isFile()) {
-    const contentToMirror = fs.readFileSync(otherFile, "utf8");
+  try {
+    ({ created, existing, total } = ensureAgentsDirectory());
+    warnings.push(...migrateRootBackups());
 
-    if (fs.existsSync(targetFile)) {
-      unlockFile(targetFile);
-    }
-
-    fs.writeFileSync(targetFile, contentToMirror);
+    result = retargetPointerFile(targetFile, targetName, otherFile, otherName);
     protectionStatus = protectFile(targetFile);
 
-    try {
-      unlockFile(otherFile);
-      fs.unlinkSync(otherFile);
-    } catch (err) {
-      console.warn(
-        `\u26A0\uFE0F Warning: Could not delete ${otherName}: ${err.message}`,
-      );
+    if (backupWasWritten) {
+      ensureBackupReadme();
     }
 
-    agentsFileStatus = `migrated from ${otherName}`;
-  } else {
-    agentsFileStatus = ensureAgentsFile(targetFile, targetName);
-    protectionStatus = protectFile(targetFile);
+    hooks = installGitHooks();
+  } catch (err) {
+    if (progress) progress.stop("Setup failed", 1);
+    throw err;
   }
 
-  // Only create the old_agent_files folder + README if a backup was actually
-  // written during this run (i.e. ensureAgentsFile returned a backup filename).
-  const backupWasCreated =
-    agentsFileStatus !== "created" &&
-    agentsFileStatus !== "unchanged" &&
-    agentsFileStatus !== "recreated" &&
-    !agentsFileStatus.startsWith("migrated");
+  if (progress) progress.stop(`Project brain ready in ${bold(".agents/")}`);
 
-  if (backupWasCreated) {
-    ensureBackupReadme();
-  }
+  if (repositoryWarning) warnings.push(repositoryWarning);
+  warnings.push(...hooks.warnings);
+  infoNotes.push(...hooks.notes);
 
-  const files = fs.readdirSync(target);
+  const agentsFileStatus = result.status;
 
-  let gitWarning = null;
-  gitWarning = await installGitHooks();
+  if (result.conflict) {
+    const { retired, otherName: conflictName } = result.conflict;
+    const savedAs =
+      retired.action === "backed-up"
+        ? `saved as ${bold(retired.backupName)}`
+        : "already present in the backups";
 
-  const statusLines = [
-    `  .agents/    ${getAgentsDirectoryStatus(created, existing, files.length)}`,
-    `  ${targetName.padEnd(11)} ${getAgentsFileStatus(agentsFileStatus)}`,
-    `  protection  ${getProtectionStatus(protectionStatus)}`,
-  ];
-
-  if (
-    agentsFileStatus !== "created" &&
-    agentsFileStatus !== "unchanged" &&
-    !agentsFileStatus.startsWith("migrated")
-  ) {
-    statusLines.push(
-      "",
-      `The existing ${targetName} content was preserved in ${agentsFileStatus}.`,
+    infoNotes.push(
+      [
+        `Both ${targetName} and ${conflictName} had custom content.`,
+        `Kept ${bold(targetName)} unchanged; ${conflictName} was ${savedAs}.`,
+      ].join("\n"),
     );
   }
 
-  statusLines.push(
-    "",
-    `${targetName} now directs agents to read .agents/ before working.`,
-  );
+  const summaryRows = [
+    [".agents/", getAgentsDirectoryStatus(created, existing, total)],
+    [targetName, getAgentsFileStatus(agentsFileStatus)],
+    [
+      "protection",
+      protectionStatus === "read-only"
+        ? green("read-only")
+        : yellow(protectionStatus),
+    ],
+    [
+      "git hooks",
+      hooks.installed.length
+        ? green(hooks.installed.join(", "))
+        : dim("not installed"),
+    ],
+  ];
+
+  if (isBackupStatus(agentsFileStatus)) {
+    summaryRows.push([
+      "backup",
+      `.agents/old_agent_files/${agentsFileStatus}`,
+    ]);
+  }
 
   if (interactive) {
-    const finalOutro = [
-      "Project brain setup completed \u2705",
-      "",
-      ...statusLines,
-    ].join("\n");
-    outro(finalOutro);
+    note(alignRows(summaryRows), "Summary");
 
-    if (gitWarning) {
-      note(gitWarning, "\u26A0\uFE0F  Warning");
+    for (const message of infoNotes) {
+      log.info(message);
     }
+
+    for (const message of warnings) {
+      log.warn(message);
+    }
+
+    note(nextSteps(targetName), "Next steps");
+    outro(`${green("Done")} — ${bold(targetName)} now points agents at .agents/`);
   } else {
-    console.log("[agent-sesh] Project brain setup completed \u2705");
+    console.log(`${tag} Project brain ready ✅`);
     console.log("");
-    console.log("Status");
-    for (const line of statusLines) {
-      console.log(line);
-    }
-    if (gitWarning) {
+    console.log(alignRows(summaryRows.map(([k, v]) => [`  ${k}`, v])));
+
+    for (const message of [...infoNotes, ...warnings]) {
       console.log("");
-      console.log(gitWarning);
+      console.log(message);
     }
+
+    console.log("");
+    console.log(`  ${targetName} now points agents at .agents/`);
   }
 }
 
 main().catch((err) => {
-  console.error("[agent-sesh] Failed to create project brain:", err.message);
+  restoreCursor();
+  console.error(`\n  ✖  ${err.message}\n`);
   process.exit(1);
 });

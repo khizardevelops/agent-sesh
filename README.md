@@ -12,12 +12,66 @@
 ## 🚀 Quick Start
 ```bash
 # Interactive setup & environment selector (Universal vs Claude Code)
-npx agent-sesh
+npx agent-sesh@latest
 
 # Or directly setup/switch to your preferred environment:
 npx agent-sesh --uni      # Universal / Standard (Cursor, Codex, Windsurf)
 npx agent-sesh --claude   # Claude Code
+
+npx agent-sesh --version  # Print the version
+npx agent-sesh --help     # Show all options
 ```
+
+The interactive run shows you the version it's using, what already exists in the
+project, and what it changed:
+
+```txt
+┌  🧠 agent-sesh  v1.0.9
+│
+◇  Workspace ──────────────────────────────╮
+│                                          │
+│  Project    my-app                       │
+│  Location   ~/code/my-app                │
+│  Brain      not set up yet               │
+│  Pointer    none                         │
+│  Git        repository detected          │
+│                                          │
+├──────────────────────────────────────────╯
+│
+◆  Which environment do you want to set up?
+│  ● 🟢 Universal — AGENTS.md (Codex, Cursor, Windsurf, Copilot…)
+│  ○ 🟠 Claude Code — CLAUDE.md
+│
+◇  Project brain ready in .agents/
+│
+◇  Summary ────────────────────────────────╮
+│                                          │
+│  .agents/     14 files created           │
+│  AGENTS.md    created                    │
+│  protection   read-only                  │
+│  git hooks    post-merge, post-checkout  │
+│                                          │
+├──────────────────────────────────────────╯
+│
+◇  Next steps ───────────────────────────────────────────────╮
+│                                                            │
+│  1  Start your AI session with @AGENTS.md                  │
+│  2  Fill in .agents/context.md and .agents/state.md        │
+│  3  Ask the AI to update .agents/ before the session ends  │
+│                                                            │
+├────────────────────────────────────────────────────────────╯
+│
+└  Done — AGENTS.md now points agents at .agents/
+```
+
+Re-running is always safe. When a project is already set up, the first question
+becomes *switch environment* or *reinitialise*, and the currently active
+environment is marked `current` and pre-selected.
+
+Colour is disabled automatically when output is piped, and honours
+[`NO_COLOR`](https://no-color.org). With `--uni` / `--claude`, or in CI and other
+non-interactive terminals, the same information prints as plain text.
+
 ---
 
 ## 🧠 Why?
@@ -36,11 +90,13 @@ project/
 └── .agents/
     ├── README.md
     ├── state.md
+    ├── pipeline.md
     ├── tasks.md
     ├── last-session.md
     ├── decisions.md
     ├── commands.md
     ├── context.md
+    ├── assumptions.md
     ├── style.md
     ├── roadmap.md
     ├── constraints.md
@@ -49,22 +105,24 @@ project/
 ```
 The package does not ship a prebuilt `.agents/` folder. These files are generated on the client's computer when `npx agent-sesh` runs.
 
-The default structure is intentionally compact so agents actually keep it updated. Pipeline details live in `state.md`, assumptions live in `context.md`, and tooling or collaboration preferences live in `style.md`.
+The default structure is intentionally compact so agents actually keep it updated. Each file owns exactly one concern: `state.md` is what exists now, `pipeline.md` is how data and work flow through it, `context.md` is why the project exists, `assumptions.md` is what is being taken as true but unverified, and `style.md` holds tooling and collaboration preferences.
 
 The instruction pointer file forces the AI to:
 1. Read `.agents/README.md` and every file in `.agents/` at session start
 2. Treat the pointer file as a pointer only, not as project memory
 3. Update the relevant `.agents/` files before session end
 
-If the pointer file already exists, agent-sesh preserves it as a backup (e.g. `OLD_AGENTS_1.md` or `OLD_CLAUDE_1.md`) before generating the standard template pointer.
+If the pointer file already exists and you have customised it, agent-sesh preserves it as a backup (e.g. `OLD_AGENTS_1.md` or `OLD_CLAUDE_1.md`) in `.agents/old_agent_files/` before generating the standard template pointer. Untouched template content is discarded rather than backed up, so the backup folder only appears when there is something real to keep.
 
 ### 🔄 Seamless Environment Switching
 
-You can easily switch your workspace environment at any time:
-- Switching to **Universal** (`--uni`) will copy/mirror the contents of `CLAUDE.md` to `AGENTS.md`, protect `AGENTS.md`, and clean up `CLAUDE.md`.
-- Switching to **Claude Code** (`--claude`) will copy/mirror the contents of `AGENTS.md` to `CLAUDE.md`, protect `CLAUDE.md`, and clean up `AGENTS.md`.
+You can switch your workspace environment at any time:
+- Switching to **Universal** (`--uni`) mirrors the contents of `CLAUDE.md` into `AGENTS.md`, protects `AGENTS.md`, and clears up `CLAUDE.md`.
+- Switching to **Claude Code** (`--claude`) mirrors the contents of `AGENTS.md` into `CLAUDE.md`, protects `CLAUDE.md`, and clears up `AGENTS.md`.
 
-This copies over any custom instructions you've tailored for your agents, while keeping your workspace clean and target-specific.
+This carries over any custom instructions you've tailored for your agents, rewriting references so the new file talks about itself rather than the one it came from.
+
+**If both `AGENTS.md` and `CLAUDE.md` exist with different custom content**, nothing is overwritten. The file you are switching *to* is kept exactly as it is, and the other one is backed up to `.agents/old_agent_files/`. agent-sesh never deletes or overwrites hand-written pointer content — and if a pointer file can't be read at all, it stops with an error instead of guessing.
 
 ---
 
@@ -87,7 +145,23 @@ When you run `agent-sesh` in a Git repository, it automatically installs two loc
 
 This means even after your teammates pull your branch and Git replaces the pointer file, the hooks lock it back down immediately. No extra steps required.
 
-> **Note:** If you run `agent-sesh` before `git init`, it will offer to run `git init` for you so the hooks can be installed. If you decline, just run `git init` and then `npx agent-sesh` again — it's safe to re-run.
+**Your existing hooks are safe.** agent-sesh never overwrites a hook it doesn't own. If you already have a `post-merge` or `post-checkout` hook — from Git LFS, Husky, or your own scripts — its protection block is *appended* between clearly marked delimiters:
+
+```sh
+# >>> agent-sesh >>>
+...
+# <<< agent-sesh <<<
+```
+
+Re-running only refreshes that block, so hooks stay idempotent no matter how many times you run it. If the existing hook isn't a shell script, agent-sesh leaves it completely alone and prints the block for you to add by hand.
+
+It also finds the right hooks directory rather than assuming `.git/hooks`:
+
+- **`core.hooksPath`** (Husky v5+, Lefthook, monorepos) is respected — hooks go where Git will actually run them.
+- **Worktrees and submodules**, where `.git` is a file rather than a folder, resolve to the shared hooks directory.
+- **Running from a subdirectory** installs into the repository root's hooks, with the pointer path scoped to your subdirectory. agent-sesh will never create a nested repository inside an existing one.
+
+> **Note:** If you run `agent-sesh` outside any Git repository, it offers to run `git init` for you so the hooks can be installed. If you decline — or if you used `--uni` / `--claude`, which never prompt — it tells you the hooks were skipped and why. Just run `git init` and then `npx agent-sesh` again; it's safe to re-run.
 
 ### tl;dr
 

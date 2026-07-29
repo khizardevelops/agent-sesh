@@ -21,11 +21,13 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+*~
 
-# Package files
-package-lock.json
+# Publish artifacts and credentials
+*.tgz
+.npmrc
 
 # Misc
 .env
-.plans
-.gitignore
+/.plans/
+/docs/
