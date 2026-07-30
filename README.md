@@ -46,7 +46,7 @@ project, and what it changed:
 │
 ◇  Summary ────────────────────────────────╮
 │                                          │
-│  .agents/     14 files created           │
+│  .agents/     15 files created           │
 │  AGENTS.md    created                    │
 │  protection   read-only                  │
 │  git hooks    post-merge, post-checkout  │
@@ -100,12 +100,13 @@ project/
     ├── style.md
     ├── roadmap.md
     ├── constraints.md
+    ├── bugs.md
     ├── known-issues.md
     └── glossary.md
 ```
 The package does not ship a prebuilt `.agents/` folder. These files are generated on the client's computer when `npx agent-sesh` runs.
 
-The default structure is intentionally compact so agents actually keep it updated. Each file owns exactly one concern: `state.md` is what exists now, `pipeline.md` is how data and work flow through it, `context.md` is why the project exists, `assumptions.md` is what is being taken as true but unverified, and `style.md` holds tooling and collaboration preferences.
+The default structure is intentionally compact so agents actually keep it updated. Each file owns exactly one concern: `state.md` is what exists now, `pipeline.md` is how data and work flow through it, `context.md` is why the project exists, `assumptions.md` is what is being taken as true but unverified, and `style.md` holds tooling and collaboration preferences. `bugs.md` tracks active defects that can be fixed within the current foundational technology. `known-issues.md` is an architectural reality check for problems that can only be resolved by replacing or re-architecting foundational technology; it must explain both the limitation and a credible path to fixing it.
 
 The instruction pointer file forces the AI to:
 1. Read `.agents/README.md` and every file in `.agents/` at session start

@@ -46,7 +46,8 @@ This folder is the project brain for AI agents working in this repository.
 - style.md: coding and writing style preferences.
 - roadmap.md: near-future direction.
 - constraints.md: hard rules and limits.
-- known-issues.md: known bugs, fragile areas, and technical debt.
+- bugs.md: active defects that can be fixed within the current foundational technology.
+- known-issues.md: foundational technology limits that require replacement or architectural change to resolve.
 - glossary.md: project-specific terms.
 - commands.md: project-specific command reference.
 `,
@@ -172,17 +173,125 @@ Document hard rules, platform limits, security requirements, and other boundarie
 
 ## Dependencies
 `,
+  "bugs.md": `# Bugs
+
+This is the active queue for observed or suspected defects that can be fixed within the project's current foundational technology. These problems require investigation, repair, and verification.
+
+> **Agent rule:** Every current bug is unresolved work. Keep it visible and give it a concrete Next action until a fix is verified. Never close or reclassify a bug merely because it is difficult, low priority, or has a workaround.
+
+## File Boundary
+
+- Foundational technology means the core database, auth provider, framework or runtime, infrastructure platform, protocol, or fundamental algorithmic approach on which the project is built.
+- Keep a problem here when it can be fixed through code, configuration, schemas, integrations, or supported upgrades without replacing that foundation.
+- Difficulty does not determine the file. An extra-hard defect remains a bug if the current foundation can support a correct implementation.
+- Move a problem to known-issues.md only when evidence shows that a correct fix requires replacing or re-architecting foundational technology. Carry over the evidence and identify the required foundational change.
+- A workaround reduces impact but does not resolve or close a bug.
+- After a fix is verified, move the entry to Fixed Bugs. Do not mark a bug fixed based only on a code change.
+- When a bug is part of the current work plan, tasks.md may reference its bug ID instead of duplicating its details.
+
+## Current Bugs
+
+Difficulty describes the likely scope and uncertainty of the fix, not its severity or priority. Reclassify a bug when new evidence changes the estimate. Within each section, order bugs by severity and then age.
+
+### Needs Triage
+
+Use this section when a report is not yet reproducible or there is not enough evidence to estimate the fix. Record the smallest next investigation step, then move the bug to a difficulty section once its scope is understood.
+
+### Easy Fix
+
+The cause is understood and localized. The fix should be a small change with focused verification.
+
+### Hard Fix
+
+The bug needs substantial investigation or coordinated changes across multiple parts of the system.
+
+### Extra Hard Fix
+
+The root cause is unclear or the repair needs broad, coordinated work, but a correct fix is still possible within the current foundational technology. Record the smallest useful experiment instead of guessing at a solution.
+
+<!--
+Current bug entry:
+
+#### BUG-001 — Short title
+- Severity: low | medium | high | critical
+- Status: reported | reproduced | investigating | fixing | blocked
+- Area:
+- Reported: YYYY-MM-DD
+- Reproduction:
+- Expected:
+- Actual:
+- Evidence:
+- Workaround: none
+- Next action:
+-->
+
+## Fixed Bugs
+
+Keep a concise, verifiable history here. Add newly fixed bugs first.
+
+<!--
+Fixed bug entry:
+
+### BUG-001 — Short title
+- Fixed: YYYY-MM-DD
+- Cause:
+- Resolution:
+- Verification:
+- Reference: commit, PR, or issue
+-->
+`,
   "known-issues.md": `# Known Issues
 
-Record known bugs, fragile areas, workarounds, and technical debt.
+This is the project's architectural reality check. It documents problems caused by hard capability limits in the current foundational technology when a real fix requires replacing or re-architecting that foundation.
 
-## Bugs
+> **Agent rule:** Nothing in this file is accepted as a permanent flaw or excused as "won't fix." Treat every current item as unresolved. Do not disguise the problem with a local patch that cannot satisfy the requirement; state the technological limit honestly and outline the foundational change that can resolve it.
 
-## Fragile Areas
+## File Boundary
 
-## Workarounds
+- Foundational technology means the core database, auth provider, framework or runtime, infrastructure platform, protocol, or fundamental algorithmic approach on which the project is built.
+- Add a problem here only when evidence shows the current foundation cannot support a correct solution.
+- Cost, difficulty, priority, or lack of developer time are not foundational limitations. If the current stack can solve the problem, it belongs in bugs.md.
+- Every entry must explain the blocked requirement, why the current foundation cannot meet it, and what replacement or architectural change would make a real fix possible.
+- An interim mitigation may reduce harm, but it is not a fix and must not hide the unresolved limitation.
+- When a migration becomes active, link its decision, roadmap, and tasks here. Keep the issue until the foundational change is complete and the original requirement is verified.
 
-## Technical Debt
+## Current Foundational Issues
+
+These are unresolved problems that require a change to the project's foundation.
+
+<!--
+Current foundational issue entry:
+
+### FOUNDATION-001 — Short title
+- Status: demonstrated | evaluating alternatives | migration planned | migration in progress
+- Current foundation:
+- Blocked requirement:
+- Observed limitation:
+- Why the current foundation cannot solve it:
+- Evidence:
+- Required foundational change:
+- Candidate replacement or approach:
+- Migration impact:
+- Interim mitigation: none
+- Next strategic action:
+- References: decision, roadmap item, task, research, or upstream documentation
+-->
+
+## Resolved Foundational Issues
+
+Move an issue here only after the foundational change is complete and the previously blocked requirement has been verified.
+
+<!--
+Resolved foundational issue entry:
+
+### FOUNDATION-001 — Short title
+- Resolved: YYYY-MM-DD
+- Previous foundation:
+- Replacement or architectural change:
+- Resolution:
+- Verification:
+- Reference: commit, PR, decision, or migration record
+-->
 `,
   "glossary.md": `# Glossary
 
