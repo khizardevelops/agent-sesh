@@ -1,6 +1,6 @@
 {
   "name": "agent-sesh",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "AI coding context CLI: scaffolds AGENTS.md, CLAUDE.md, GEMINI.md and other root pointer files plus a .agents/handoff/ project memory folder, so Claude Code, Cursor, Copilot, Codex, Gemini CLI and 70 more agents start every session with full project context. Works alongside npx skills.",
   "main": "index.js",
   "engines": {
