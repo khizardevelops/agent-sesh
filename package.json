@@ -1,8 +1,11 @@
 {
   "name": "agent-sesh",
-  "version": "1.0.10",
-  "description": "Generate a standard .agents folder and AGENTS.md pointer in any agent-assisted project.",
+  "version": "1.1.0",
+  "description": "AI coding context CLI: scaffolds AGENTS.md, CLAUDE.md, GEMINI.md and other root pointer files plus a .agents/handoff/ project memory folder, so Claude Code, Cursor, Copilot, Codex, Gemini CLI and 70 more agents start every session with full project context. Works alongside npx skills.",
   "main": "index.js",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "bin": {
     "agent-sesh": "index.js"
   },
@@ -10,10 +13,48 @@
     "index.js"
   ],
   "keywords": [
+    "agents-md",
+    "agents.md",
+    "claude-md",
+    "claude-code",
+    "cursor",
+    "codex",
+    "copilot",
+    "github-copilot",
+    "windsurf",
+    "cline",
+    "aider",
+    "gemini-cli",
+    "ai-agents",
+    "coding-agent",
+    "ai-coding",
+    "ai-assistant",
+    "ai-pair-programming",
+    "ai-context",
+    "agent-context",
+    "context-engineering",
+    "agent-memory",
+    "ai-memory",
+    "project-memory",
+    "persistent-context",
+    "session-handoff",
+    "llm",
+    "prompt-engineering",
+    "spec-driven-development",
+    "developer-tools",
+    "scaffold",
+    "cli",
     "vibe-coding",
     "vibecoding",
-    "agent-context",
-    "ai-coding"
+    "skills",
+    "agent-skills",
+    "skills-sh",
+    "gemini-md",
+    "qwen-code",
+    "iflow-cli",
+    "opencode",
+    "zed",
+    "dotagents"
   ],
   "author": "khizardevelops",
   "license": "MIT",
@@ -27,5 +68,9 @@
   "bugs": {
     "url": "https://github.com/khizardevelops/agent-sesh/issues"
   },
-  "homepage": "https://github.com/khizardevelops/agent-sesh#readme"
+  "homepage": "https://github.com/khizardevelops/agent-sesh#readme",
+  "scripts": {
+    "test": "node --test test/guard.test.js test/interactive.test.js test/matrix.test.js test/migration.test.js test/pointers.test.js test/skills-ecosystem.test.js",
+    "check:registry": "node scripts/check-skills-registry.js"
+  }
 }

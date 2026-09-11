@@ -31,3 +31,7 @@ Thumbs.db
 .env
 /.plans/
 /docs/
+# Local scratch area for manual testing
+/sandbox/
+__pycache__/
+test-data/
