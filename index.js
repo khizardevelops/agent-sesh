@@ -5,17 +5,30 @@ const path = require("path");
 const childProcess = require("child_process");
 const {
   intro,
-  outro,
   select,
   multiselect,
   confirm,
-  note,
-  log,
   spinner,
   cancel,
   isCancel,
   isTTY,
+  symbol,
+  symbolBar,
+  formatInstructionFooter,
+  SELECT_INSTRUCTIONS,
+  S_BAR,
+  S_BAR_START,
+  S_BAR_END,
+  S_RADIO_ACTIVE,
+  S_RADIO_INACTIVE,
+  S_STEP_SUBMIT,
+  S_INFO,
+  S_WARN,
 } = require("@clack/prompts");
+// The engine @clack/prompts is built on. Only for the one prompt its ready-made
+// select cannot draw: a detail box that follows the cursor.
+const { SelectPrompt, getColumns, wrapTextWithPrefix } = require("@clack/core");
+const { styleText, stripVTControlCharacters } = require("node:util");
 
 // Canonical, so paths agree with what git reports: macOS resolves /var to
 // /private/var, and Windows can hand out 8.3 short names or a lowercase
@@ -246,10 +259,29 @@ function joinNames(items) {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-const agentFiles = {
+// Agents — Gemini above all — like to "tidy up" a folder they did not create:
+// renaming files, merging them, deleting the ones that look empty. Every path
+// in handoff/ is fixed, because agent-sesh, the pointer files and every later
+// session find the brain by exactly these names. So the rule is stated in the
+// pointer, in the README, and at the top of every template file.
+const handoffFileNotice = `<!-- agent-sesh: never rename, move or delete this file or its folder. Edit the content only. See ${handoffLabel}/README.md. -->`;
+
+const agentFileBodies = {
   "README.md": `# ${handoffLabel}
 
 This folder is the project brain for AI agents working in this repository.
+
+## Fixed Layout — Do Not Rename, Move Or Delete
+
+Every folder and file name in here is fixed. agent-sesh, the root pointer
+files and every later session find the brain by these exact paths.
+
+- Never rename, move or delete ${memoryDirName}/, ${rulesDirName}/, ${referencesDirName}/, ${archiveDirName}/
+  or ${backupDirName}/, or any file inside them.
+- Never delete a file to clean up or start fresh, and never replace one with a
+  differently named copy. Edit the content instead; empty sections are fine.
+- If a file looks obsolete, rewrite its content and note why in
+  ${memoryDirName}/last-session.md.
 
 ## Required Agent Workflow
 
@@ -589,11 +621,217 @@ etc...
 `,
 };
 
+// What agent-sesh writes: every body behind the notice, except the README,
+// which carries the rule as a section of its own.
+const agentFiles = Object.fromEntries(
+  Object.entries(agentFileBodies).map(([relativePath, body]) => [
+    relativePath,
+    relativePath === "README.md" ? body : `${handoffFileNotice}\n\n${body}`,
+  ]),
+);
+
+// 1.1.x wrote the template bodies without the notice. A file still holding
+// exactly that body was never touched, so it is upgraded in place, and it is
+// not worth keeping when a migrated file needs its name. A file with anything
+// else in it is the user's and is never rewritten.
+function isUntouchedTemplate(relativePath, content) {
+  if (!Object.prototype.hasOwnProperty.call(agentFiles, relativePath)) return false;
+  if (sameText(content, agentFiles[relativePath])) return true;
+  if (relativePath === "README.md") return isLegacyHandoffReadme(content);
+  return sameText(content, agentFileBodies[relativePath]);
+}
+
+// Frozen copies of every handoff README agent-sesh has shipped. The README is
+// agent-sesh's index of the layout, so one that still matches an old body
+// describes folders that no longer exist and is replaced with the current one.
+//
+// NEVER edit an entry here — append the outgoing README when it changes.
+const legacyHandoffReadmes = [
+  // 1.1.0 – 1.1.1: `.agents/handoff/` before the fixed-layout section.
+  `# ${handoffLabel}
+
+This folder is the project brain for AI agents working in this repository.
+
+## Required Agent Workflow
+
+1. Read this file first.
+2. Read every other file in this folder before changing code.
+3. Keep the relevant files updated as work progresses.
+4. Before ending a session, update memory/state.md, memory/tasks.md,
+   and memory/last-session.md.
+5. Do not read archive/ by default. Open a specific snapshot only when
+   the task needs historical context.
+
+## Layout
+
+- memory/: mutable session state. Expect to rewrite these as work moves.
+- rules/: standing guardrails. Obey these; change them rarely and deliberately.
+- references/: project background and tracked problems. Consult as needed.
+
+## Files
+
+### memory/ — session state
+
+- memory/state.md: current implementation status and system shape.
+- memory/pipeline.md: how work and data flow through the system end to end.
+- memory/tasks.md: next actionable tasks.
+- memory/last-session.md: handoff notes from the most recent session.
+- memory/decisions.md: settled technical decisions and tradeoffs.
+
+### rules/ — standing guardrails
+
+- rules/style.md: coding and writing style preferences.
+- rules/constraints.md: hard rules and limits.
+
+### references/ — background and tracked problems
+
+- references/overview.md: project intent, goals, and non-goals.
+- references/glossary.md: project-specific terms.
+- references/roadmap.md: near-future direction.
+- references/assumptions.md: what is being taken as true, and what still needs verification.
+- references/bugs.md: active defects that can be fixed within the current foundational technology.
+- references/known-issues.md: foundational technology limits that require replacement or architectural change to resolve.
+- references/commands.md: project-specific command reference.
+
+### Not part of default context
+
+- archive/: historical project-brain snapshots.
+- old_agent_files/: backups of previous root pointer files.
+
+## Outside This Folder
+
+\`.agents/\` is a shared folder. \`.agents/skills/\` holds skills installed
+with \`npx skills\` (skills.sh): on-demand instructions you load yourself when a task
+matches one. They are not session state. Anything else sitting beside
+\`handoff/\` belongs to you or to other tools. agent-sesh never creates,
+moves, or archives any of it.
+`,
+
+  // Flat `.agents/README.md`, 1.0.10 (bugs.md introduced).
+  `# .agents
+
+This folder is the project brain for AI agents working in this repository.
+
+## Required Agent Workflow
+
+1. Read this file first.
+2. Read every other file in this folder before changing code.
+3. Keep the relevant files updated as work progresses.
+4. Before ending a session, update state.md, tasks.md, and last-session.md.
+
+## Files
+
+- state.md: current implementation status and system shape.
+- pipeline.md: how work and data flow through the system end to end.
+- tasks.md: next actionable tasks.
+- last-session.md: handoff notes from the most recent session.
+- decisions.md: settled technical decisions and tradeoffs.
+- context.md: project intent, goals, and non-goals.
+- assumptions.md: what is being taken as true, and what still needs verification.
+- style.md: coding and writing style preferences.
+- roadmap.md: near-future direction.
+- constraints.md: hard rules and limits.
+- bugs.md: active defects that can be fixed within the current foundational technology.
+- known-issues.md: foundational technology limits that require replacement or architectural change to resolve.
+- glossary.md: project-specific terms.
+- commands.md: project-specific command reference.
+`,
+
+  // Flat, 1.0.9 (pipeline.md and assumptions.md, before bugs.md).
+  `# .agents
+
+This folder is the project brain for AI agents working in this repository.
+
+## Required Agent Workflow
+
+1. Read this file first.
+2. Read every other file in this folder before changing code.
+3. Keep the relevant files updated as work progresses.
+4. Before ending a session, update state.md, tasks.md, and last-session.md.
+
+## Files
+
+- state.md: current implementation status and system shape.
+- pipeline.md: how work and data flow through the system end to end.
+- tasks.md: next actionable tasks.
+- last-session.md: handoff notes from the most recent session.
+- decisions.md: settled technical decisions and tradeoffs.
+- context.md: project intent, goals, and non-goals.
+- assumptions.md: what is being taken as true, and what still needs verification.
+- style.md: coding and writing style preferences.
+- roadmap.md: near-future direction.
+- constraints.md: hard rules and limits.
+- known-issues.md: known bugs, fragile areas, and technical debt.
+- glossary.md: project-specific terms.
+- commands.md: project-specific command reference.
+`,
+
+  // Flat, from the commands.md release to 1.0.8. The file list named project_commands.md, but the
+  // file itself was always written as commands.md.
+  `# .agents
+
+This folder is the project brain for AI agents working in this repository.
+
+## Required Agent Workflow
+
+1. Read this file first.
+2. Read every other file in this folder before changing code.
+3. Keep the relevant files updated as work progresses.
+4. Before ending a session, update state.md, tasks.md, and last-session.md.
+
+## Files
+
+- state.md: current implementation status and system shape.
+- tasks.md: next actionable tasks.
+- last-session.md: handoff notes from the most recent session.
+- decisions.md: settled technical decisions and tradeoffs.
+- context.md: project intent, goals, and non-goals.
+- style.md: coding and writing style preferences.
+- roadmap.md: near-future direction.
+- constraints.md: hard rules and limits.
+- known-issues.md: known bugs, fragile areas, and technical debt.
+- glossary.md: project-specific terms.
+- project_commands.md: project-specific command reference.
+`,
+
+  // Flat, the first release, before commands.md.
+  `# .agents
+
+This folder is the project brain for AI agents working in this repository.
+
+## Required Agent Workflow
+
+1. Read this file first.
+2. Read every other file in this folder before changing code.
+3. Keep the relevant files updated as work progresses.
+4. Before ending a session, update state.md, tasks.md, and last-session.md.
+
+## Files
+
+- state.md: current implementation status and system shape.
+- tasks.md: next actionable tasks.
+- last-session.md: handoff notes from the most recent session.
+- decisions.md: settled technical decisions and tradeoffs.
+- context.md: project intent, goals, and non-goals.
+- style.md: coding and writing style preferences.
+- roadmap.md: near-future direction.
+- constraints.md: hard rules and limits.
+- known-issues.md: known bugs, fragile areas, and technical debt.
+- glossary.md: project-specific terms.
+`,
+];
+
+function isLegacyHandoffReadme(content) {
+  return legacyHandoffReadmes.some((readme) => sameText(content, readme));
+}
+
 const agentsFileContent = `# Agent Instructions
 
 This project uses \`${handoffLabel}/\` as its agent memory and handoff folder.
 
 IMPORTANT: Do not edit this AGENTS.md file for project memory, state, tasks, decisions, or handoff notes. This file is only a pointer. Put all project memory updates in \`${handoffLabel}/\`.
+
+IMPORTANT: Never rename, move, or delete any folder or file inside \`${handoffLabel}/\`, and never delete files there to clean up or start fresh. The layout is fixed; edit file contents only.
 
 Before making changes:
 1. Read \`${handoffLabel}/README.md\`.
@@ -624,6 +862,28 @@ Do not skip the \`${handoffLabel}/\` files. Do not write session state into AGEN
 // shipped as CLAUDE.md is recognised just as well as one that shipped as
 // AGENTS.md.
 const legacyPointerTemplates = [
+  // 1.1.0 – 1.1.1, before the fixed-layout rule. Literal folder names, so the
+  // entry keeps reproducing the shipped bytes whatever the constants become.
+  `# Agent Instructions
+
+This project uses \`.agents/handoff/\` as its agent memory and handoff folder.
+
+IMPORTANT: Do not edit this AGENTS.md file for project memory, state, tasks, decisions, or handoff notes. This file is only a pointer. Put all project memory updates in \`.agents/handoff/\`.
+
+Before making changes:
+1. Read \`.agents/handoff/README.md\`.
+2. Read every active standard file in \`.agents/handoff/memory/\`,
+   \`.agents/handoff/rules/\`, and \`.agents/handoff/references/\`.
+   Do not recursively read \`.agents/handoff/archive/\`; open a specific
+   snapshot only when the task needs historical context.
+3. Treat \`.agents/handoff/memory/state.md\`, \`.agents/handoff/memory/tasks.md\`, and \`.agents/handoff/memory/last-session.md\` as the primary session state.
+4. Keep the relevant files in \`.agents/handoff/\` updated before ending the session.
+
+\`.agents/\` is a shared folder. \`.agents/skills/\` holds skills installed with \`npx skills\`: on-demand instructions, not session state. Anything else beside \`handoff/\` belongs to the user or to other tools. Read it when a task calls for it, but never treat it as session state and never write session state into it.
+
+Do not skip the \`.agents/handoff/\` files. Do not write session state into AGENTS.md. The \`.agents/handoff/\` folder is the source of truth for agent context in this project.
+`,
+
   // The 1.1.0 development builds after the rules/ + references/ rename, before
   // the pointer started naming `npx skills`. Never published; generated locally.
   // Folder names are literals for the same reason as the entry below.
@@ -693,6 +953,9 @@ const oldAgentFilesReadme = `# Old Agent Files
 This folder contains backups of previous pointer files
 (${pointerFileNames.join(", ")}).
 
+Do not rename, move or delete this folder or anything in it. agent-sesh
+numbers new backups from the files it finds here.
+
 Backups are only created when the pointer file contained **custom user content**
 (i.e., content that differs from the default agent-sesh template). Default
 template content is never backed up.
@@ -744,6 +1007,22 @@ cannot be read is left where it is rather than being discarded.
 `;
 
 const archiveReadme = `# Project Brain Archive
+
+This folder contains dated snapshots made when the active project brain was
+reinitialised. Each snapshot preserves the previous active \`${handoffLabel}/\`
+contents and includes a \`manifest.json\` with its creation details.
+
+Archived material is historical reference, not active agent context. Agents
+should read the active files in the parent \`${handoffLabel}/\` directory by
+default and open a specific snapshot only when a task needs historical context.
+
+Snapshots are never automatically deleted or merged back into the active
+project brain. Do not rename, move or delete this folder or any snapshot in it.
+`;
+
+// The archive README before the fixed-layout sentence. Frozen: a README still
+// matching it is upgraded, anything else is left alone.
+const legacyArchiveReadme = `# Project Brain Archive
 
 This folder contains dated snapshots made when the active project brain was
 reinitialised. Each snapshot preserves the previous active \`${handoffLabel}/\`
@@ -894,6 +1173,17 @@ function findLegacyLayoutEntries() {
 
     if (legacyDirNames.includes(entry) && isDirectory(entryPath)) {
       found.push({ name: entry, destination: entry, isDirectory: true });
+    }
+  }
+
+  // `.agents/` is shared, so a README.md there on its own proves nothing: it is
+  // ours only if it is one agent-sesh wrote, or it sits beside the rest of a
+  // flat brain. Someone else's README is never swept into the archive.
+  const readme = found.find((entry) => entry.name === "README.md");
+  if (readme && !found.some((entry) => entry !== readme && !entry.isDirectory)) {
+    const content = readTextOrNull(path.join(target, readme.name));
+    if (content === null || !isLegacyHandoffReadme(content)) {
+      found.splice(found.indexOf(readme), 1);
     }
   }
 
@@ -1534,6 +1824,7 @@ function ensureAgentsDirectory() {
 
   let created = 0;
   let existing = 0;
+  let updated = 0;
 
   // Per-file existence check, so a re-run tops up templates added by a newer
   // version without touching anything the user has already written.
@@ -1542,6 +1833,7 @@ function ensureAgentsDirectory() {
 
     if (fs.existsSync(filePath)) {
       existing += 1;
+      if (upgradeUntouchedTemplate(relativePath, filePath, content)) updated += 1;
       continue;
     }
 
@@ -1558,7 +1850,35 @@ function ensureAgentsDirectory() {
     created += 1;
   }
 
-  return { created, existing, total: Object.keys(agentFiles).length };
+  // An older archive README gains the fixed-layout sentence too.
+  const archiveDir = path.join(handoffTarget, archiveDirName);
+  if (isRegularFile(path.join(archiveDir, "README.md"))) ensureArchiveReadme(archiveDir);
+
+  return { created, existing, updated, total: Object.keys(agentFiles).length };
+}
+
+// Rewrites a file that still holds an older agent-sesh body for its path —
+// nobody has written into it, so nothing is lost. Returns true if it did.
+function upgradeUntouchedTemplate(relativePath, filePath, content) {
+  if (!isRegularFile(filePath)) return false;
+
+  let current;
+  try {
+    current = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return false;
+  }
+
+  if (sameText(current, content) || !isUntouchedTemplate(relativePath, current)) return false;
+
+  try {
+    writeFileSafe(filePath, content);
+  } catch (err) {
+    throw new Error(
+      `Cannot update ${handoffLabel}/${relativePath} (${err.message}). Fix the folder permissions and re-run agent-sesh.`,
+    );
+  }
+  return true;
 }
 
 function formatArchiveTimestamp(date) {
@@ -1681,6 +2001,14 @@ function ensureArchiveReadme(archiveDir) {
     throw new Error(
       `${handoffLabel}/${archiveDirName}/README.md exists but is not a regular file. Move it aside and re-run agent-sesh.`,
     );
+  }
+
+  try {
+    if (sameText(fs.readFileSync(readmePath, "utf8"), legacyArchiveReadme)) {
+      writeFileSafe(readmePath, archiveReadme);
+    }
+  } catch {
+    // Unreadable: leave it; it is documentation, not state.
   }
 }
 
@@ -1885,6 +2213,31 @@ function describeMigrationConflicts(pairs) {
   ].join("\n");
 }
 
+function readTextOrNull(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// What to do when a file being migrated finds its new name already taken.
+// A destination still holding an untouched template is only boilerplate that a
+// newer run filled the gap with — the migrated file, with the user's content,
+// replaces it. An identical file needs no move at all. Anything else is a real
+// conflict (null): both files are kept and the user is told.
+function occupiedDestinationDisposal(sourcePath, destination, destinationPath) {
+  if (!isRegularFile(sourcePath) || !isRegularFile(destinationPath)) return null;
+
+  const source = readTextOrNull(sourcePath);
+  const existing = readTextOrNull(destinationPath);
+  if (source === null || existing === null) return null;
+
+  if (sameText(source, existing)) return "duplicate";
+  if (isUntouchedTemplate(destination, existing)) return "replace-template";
+  return null;
+}
+
 // Folds the interim 1.1.0 folders into the current ones.
 //
 // No snapshot here, unlike the flat migration. That one lifts an entire project
@@ -1900,12 +2253,22 @@ function migrateInterimLayout(entries, warnings) {
   for (const entry of entries) {
     const destinationPath = handoffPath(entry.destination);
 
+    let disposal = null;
     if (fs.existsSync(destinationPath)) {
-      conflicts.push(entry);
-      continue;
+      disposal = occupiedDestinationDisposal(entry.sourcePath, entry.destination, destinationPath);
+      if (!disposal) {
+        conflicts.push(entry);
+        continue;
+      }
     }
 
     try {
+      if (disposal === "duplicate") {
+        removeFileSafe(entry.sourcePath);
+        moved += 1;
+        continue;
+      }
+      if (disposal === "replace-template") removeFileSafe(destinationPath);
       makeDirectory(
         path.dirname(destinationPath),
         handoffFolderLabel(entry.destination),
@@ -1960,14 +2323,34 @@ function migrateToHandoffLayout() {
   const movable = [];
   const conflicts = [];
 
+  let customReadme = false;
+
   // An occupied destination means a half-migrated tree. For files that is a
   // conflict: never overwrite, leave that one alone, say so, migrate the rest.
   // Directories merge instead, so for them it is not a conflict at all.
   for (const entry of entries) {
     const destinationPath = handoffPath(entry.destination);
 
+    // The flat README is agent-sesh's index of files that no longer sit where
+    // it says. It goes into the snapshot like the rest, but it does not become
+    // the live README: ensureAgentsDirectory() writes the current one.
+    if (!entry.isDirectory && entry.name === "README.md") {
+      customReadme = !isLegacyHandoffReadme(readTextOrNull(path.join(target, entry.name)) ?? "");
+      movable.push({ ...entry, destinationPath, disposal: "superseded" });
+      continue;
+    }
+
     if (!entry.isDirectory && fs.existsSync(destinationPath)) {
-      conflicts.push(entry);
+      const disposal = occupiedDestinationDisposal(
+        path.join(target, entry.name),
+        entry.destination,
+        destinationPath,
+      );
+      if (disposal) {
+        movable.push({ ...entry, destinationPath, disposal });
+      } else {
+        conflicts.push(entry);
+      }
       continue;
     }
 
@@ -2016,7 +2399,11 @@ function migrateToHandoffLayout() {
           `${handoffLabel}/${entry.destination}`,
           warnings,
         );
+      } else if (entry.disposal === "superseded" || entry.disposal === "duplicate") {
+        // The snapshot above already holds the copy.
+        removeFileSafe(sourcePath);
       } else {
+        if (entry.disposal === "replace-template") removeFileSafe(entry.destinationPath);
         makeDirectory(
           path.dirname(entry.destinationPath),
           handoffFolderLabel(entry.destination),
@@ -2040,7 +2427,7 @@ function migrateToHandoffLayout() {
   // shared destinations in a defined order rather than racing for them.
   moved += migrateInterimLayout(interimEntries, warnings);
 
-  return { moved, warnings, snapshot };
+  return { moved, warnings, snapshot, customReadme };
 }
 
 function archiveAndReinitializeAgentsDirectory() {
@@ -2233,8 +2620,11 @@ function classifyPointer(content) {
 //     says where the original went.
 //
 // keepExisting is the reinit path: a brain reset changes .agents/handoff/, not
-// the root instructions, so every pointer already here stays exactly as it is
-// and nothing is retired.
+// the root instructions, so nothing is retired and a customised pointer stays
+// exactly as it is. A pointer that does not lead to the brain is still fixed:
+// an older template is refreshed and a foreign file is backed up and replaced.
+// Reinit also migrates, and leaving a 1.0.x pointer alone there would send
+// agents to `.agents/state.md` after it had just been moved.
 function reconcilePointers(selected, { keepExisting = false } = {}) {
   const contents = readPointerFiles();
   const selectedIds = new Set(selected.map((env) => env.id));
@@ -2255,10 +2645,13 @@ function reconcilePointers(selected, { keepExisting = false } = {}) {
 
   if (keepExisting) {
     for (const env of selected) {
-      record(
-        env,
-        contents.has(env.id) ? "unchanged" : ensureAgentsFile(pointerPath(env), env.fileName),
-      );
+      if (kinds.get(env.id) === "adopted") {
+        record(env, "unchanged");
+        continue;
+      }
+      const status = ensureAgentsFile(pointerPath(env), env.fileName);
+      if (isBackupStatus(status)) backups.push({ env, backupName: status });
+      record(env, status);
     }
     return { results, retired, backups, divergent, conflicts, source: null };
   }
@@ -2332,16 +2725,19 @@ function reconcilePointers(selected, { keepExisting = false } = {}) {
   return { results, retired, backups, divergent, conflicts, source };
 }
 
-function getAgentsDirectoryStatus(created, existing, total) {
+function getAgentsDirectoryStatus(created, existing, total, updated = 0) {
   if (created === total) {
     return `${total} files created`;
   }
 
+  // Only named when it happened: most runs update nothing.
+  const refreshed = updated > 0 ? `, ${updated} template(s) updated` : "";
+
   if (created === 0) {
-    return `ready (${existing} existing, 0 created)`;
+    return `ready (${existing} existing, 0 created${refreshed})`;
   }
 
-  return `ready (${created} created, ${existing} existing)`;
+  return `ready (${created} created, ${existing} existing${refreshed})`;
 }
 
 // A status that is not one of the known keywords is the filename of the
@@ -2966,18 +3362,13 @@ function environmentOptions() {
 }
 
 // What the prompt opens with. An existing project shows what it has; a fresh
-// one follows the agents detected on this machine, the way skills picks its
-// install targets. Universal is the fallback so the prompt never opens empty.
+// one opens with Universal alone. AGENTS.md is read by nearly every agent, so
+// one pointer is the right default — pre-ticking every detected agent's file
+// set up three or four pointers nobody asked for. Detected agents are still
+// named in the option hints, one keypress away.
 function initialEnvironmentIds() {
   const present = presentEnvironments().map((env) => env.id);
-  if (present.length) return present;
-
-  const detected = detectedAgents();
-  const ids = pointerEnvironments
-    .filter((env) => agentsForEnvironment(env).some((agent) => detected.includes(agent)))
-    .map((env) => env.id);
-
-  return ids.length ? ids : [defaultEnvironment.id];
+  return present.length ? present : [defaultEnvironment.id];
 }
 
 async function chooseEnvironments(message) {
@@ -2992,27 +3383,231 @@ async function chooseEnvironments(message) {
   return pointerEnvironments.filter((env) => ids.includes(env.id));
 }
 
+// ── left-guided output ────────────────────────────────────────────
+//
+// Everything printed during an interactive run hangs off one left guide line.
+// clack's note() also draws a top rule, a right edge and a bottom rule, each
+// sized to the terminal at the moment it printed: resize the window and they
+// break apart. A left edge alone survives any width — as long as a line too
+// long for the window wraps *with* its guide instead of back to the margin,
+// which is what wrapGuided() is for. clack's log.info/log.warn do not wrap.
+
+const visibleLength = (text) => [...stripVTControlCharacters(text)].length;
+
+// Word wrap to `width` visible columns. A continuation keeps its line's own
+// indent, no line ends in a space, and only a single word wider than the
+// window (a long path) is broken mid-word.
+function wrapLine(raw, width) {
+  const indent = stripVTControlCharacters(raw).match(/^ */)[0];
+  const room = Math.max(10, width - indent.length);
+  const words = raw.slice(raw.indexOf(raw.trimStart())).split(" ");
+  const lines = [];
+  let line = "";
+
+  for (let word of words) {
+    while (!word.includes("\x1b") && visibleLength(word) > room) {
+      if (line.trim()) lines.push(line);
+      lines.push(word.slice(0, room));
+      word = word.slice(room);
+      line = "";
+    }
+    const candidate = line === "" ? word : `${line} ${word}`;
+    if (line.trim() && visibleLength(candidate) > room) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  lines.push(line);
+  return lines.map((text) => `${indent}${text}`.trimEnd());
+}
+
+function wrapGuided(message, firstPrefix, prefix) {
+  const width = getColumns(process.stdout) - visibleLength(prefix);
+  return message
+    .split("\n")
+    .flatMap((raw) => wrapLine(raw, width))
+    .map((line, index) => `${index === 0 ? firstPrefix : prefix}${line}`.trimEnd())
+    .join("\n");
+}
+
+const guidePrefix = () => `${styleText("gray", S_BAR)}  `;
+
+// The rule that closes a section: heavy, then thin, then fading out. It is a
+// fixed length rather than the width of the window, so unlike a full-width
+// bottom rule it cannot break when the window is resized. Only a window
+// narrower than the rule itself trims it.
+const DIVIDER_PARTS = [
+  ["cyan", "┣" + "━".repeat(14)],
+  ["gray", "─".repeat(10)],
+  ["dim", "╌".repeat(4) + "┄".repeat(2)],
+];
+
+function sectionDivider() {
+  let room = Math.max(1, getColumns(process.stdout) - 1);
+  return DIVIDER_PARTS.map(([style, text]) => {
+    const shown = [...text].slice(0, room).join("");
+    room -= [...shown].length;
+    return shown ? styleText(style, shown) : "";
+  }).join("");
+}
+
+// A titled section: what note() shows, without the frame, closed by the
+// divider above.
+function section(message, title) {
+  const bar = styleText("gray", S_BAR);
+  const divider = sectionDivider();
+  process.stdout.write(
+    `${bar}\n${styleText("green", S_STEP_SUBMIT)}  ${title}\n${bar}\n` +
+      `${wrapGuided(message, guidePrefix(), guidePrefix())}\n${bar}\n${divider}\n`,
+  );
+}
+
+// outro(), wrapped: the guide ends here, so continuation lines have none.
+function guidedOutro(message) {
+  process.stdout.write(
+    `${styleText("gray", S_BAR)}\n${wrapGuided(message, `${styleText("gray", S_BAR_END)}  `, "   ")}\n\n`,
+  );
+}
+
+// log.info / log.warn / log.step, wrapped the same way.
+function guidedLog(message, kind) {
+  const glyph = {
+    info: styleText("blue", S_INFO),
+    warn: styleText("yellow", S_WARN),
+    step: styleText("green", S_STEP_SUBMIT),
+  }[kind];
+  process.stdout.write(`${styleText("gray", S_BAR)}\n${wrapGuided(message, `${glyph}  `, guidePrefix())}\n`);
+}
+
+// Greedy word wrap for the detail box. The text is plain ASCII prose, so
+// length is width.
+function wrapWords(text, width) {
+  const lines = [];
+  let line = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (line && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// clack's select, plus a box above the options that explains the one under
+// the cursor. A hint in parentheses has room for a few words; what each
+// choice actually does to a project takes a paragraph. The box is as tall as
+// the longest explanation, so moving the cursor never makes the prompt jump.
+function selectWithDetails({ message, options, initialValue }) {
+  const output = process.stdout;
+
+  return new SelectPrompt({
+    options,
+    initialValue,
+    output,
+    render() {
+      const head = `${styleText("gray", S_BAR)}\n${wrapTextWithPrefix(
+        output,
+        message,
+        `${symbolBar(this.state)}  `,
+        `${symbol(this.state)}  `,
+      )}\n`;
+      const current = this.options[this.cursor];
+
+      if (this.state === "submit") {
+        return `${head}${styleText("gray", S_BAR)}  ${styleText("dim", current.label)}`;
+      }
+      if (this.state === "cancel") {
+        return `${head}${styleText("gray", S_BAR)}  ${styleText(["strikethrough", "dim"], current.label)}\n${styleText("gray", S_BAR)}`;
+      }
+
+      const guide = `${styleText("cyan", S_BAR)}  `;
+      // "│  │ " in front of every line, and never past 80 columns.
+      const width = Math.max(20, Math.min(getColumns(output), 80) - 6);
+      const blocks = this.options.map((option) => wrapWords(option.details, width));
+      const height = Math.max(...blocks.map((block) => block.length));
+      const edge = (glyph) => styleText("gray", glyph);
+
+      const box = [
+        `${guide}${edge(S_BAR_START)} ${styleText("bold", current.label)}`,
+        ...Array.from({ length: height }, (_, row) =>
+          `${guide}${edge(S_BAR)} ${blocks[this.cursor][row] ?? ""}`.trimEnd(),
+        ),
+        `${guide}${edge(S_BAR_END)}`,
+        guide.trimEnd(),
+      ];
+
+      const choices = this.options.map((option, index) =>
+        index === this.cursor
+          ? `${guide}${styleText("green", S_RADIO_ACTIVE)} ${option.label}`
+          : `${guide}${styleText("dim", S_RADIO_INACTIVE)} ${styleText("dim", option.label)}`,
+      );
+
+      return `${head}${box.join("\n")}\n${choices.join("\n")}\n${formatInstructionFooter(
+        SELECT_INSTRUCTIONS,
+        true,
+      ).join("\n")}\n`;
+    },
+  }).prompt();
+}
+
+// Labels say what the user wants, not how it works. The common case — a new
+// agent-sesh version, or an old layout to bring forward — is "update", and it
+// asks nothing more: the same pointers, brought up to date, content kept.
 async function selectAction() {
   if (isHandoffPopulated()) {
-    const choice = await select({
-      message: "This project already has a brain. What do you want to do?",
+    const upgrading = hasLegacyLayout();
+    const choice = await selectWithDetails({
+      message: upgrading
+        ? "This project's brain uses an older agent-sesh layout. What do you want to do?"
+        : "This project already has a brain. What do you want to do?",
       options: [
         {
+          value: "update",
+          label: upgrading ? "⏫ Upgrade to the new layout" : "⏫ Update",
+          details: upgrading
+            ? `Moves your old ${agentsDirName}/*.md files into ${handoffLabel}/ (${memoryDirName}/, ` +
+              `${rulesDirName}/ and ${referencesDirName}/) and keeps everything you wrote: context.md ` +
+              `becomes ${referencesDirName}/overview.md, and a copy of the old layout is saved in ` +
+              `${archiveDirName}/. Your pointer files stay. Asks nothing else.`
+            : `Brings this project up to date with agent-sesh v${VERSION}: missing files are ` +
+              "recreated, templates you never edited and stock pointer files get the current " +
+              "wording, and protection is re-applied. Anything you wrote is kept exactly as it " +
+              "is. Asks nothing else.",
+        },
+        {
           value: "switch",
-          label: "\u{1F504} Switch environment",
-          hint: "keep the brain · choose the pointer files",
+          label: "\u{1F504} Change pointer files",
+          details:
+            `Choose which root files point agents at the brain: ${pointerFileNames[0]} (read by ` +
+            `most agents), ${pointerFileNames.slice(1).join(", ")}. Tick one to add it, untick ` +
+            `one to retire it; a file you customised is backed up first. Everything ` +
+            `${upgrading ? "Upgrade" : "Update"} does happens too.`,
         },
         {
           value: "reinit",
-          label: `\u{1F535} Reinitialise ${handoffLabel}/`,
-          hint: "archive the current brain · start from fresh templates",
+          label: "\u{1F535} Start over",
+          details:
+            `Moves the whole current brain into a dated folder in ${handoffLabel}/${archiveDirName}/ ` +
+            "and starts again from blank templates. Nothing is deleted, but agents stop " +
+            "reading the old content. Your pointer files stay. You are asked to confirm.",
         },
       ],
-      initialValue: "switch",
+      initialValue: "update",
     });
 
     if (isCancel(choice)) return null;
     if (choice === "reinit") return { action: "reinit" };
+
+    // A brain with no pointer at all has nothing to keep, so it is asked.
+    const present = presentEnvironments();
+    if (choice === "update" && present.length > 0) {
+      return { action: "setup", environments: present };
+    }
   }
 
   const environments = await chooseEnvironments(
@@ -3180,7 +3775,7 @@ async function main() {
     );
   } else {
     intro(`${bold("\u{1F9E0} agent-sesh")}  ${grey(`v${VERSION}`)}`);
-    note(describeWorkspace(), "Workspace");
+    section(describeWorkspace(), "Workspace");
     const choice = await selectAction();
     if (choice === null) bail("Cancelled.");
     if (choice.action === "reinit") reinit = true;
@@ -3208,13 +3803,14 @@ async function main() {
     if (proceed === null) bail("Cancelled.");
 
     if (!proceed) {
-      outro(`${yellow("Reinit cancelled.")} Nothing was changed.`);
+      guidedOutro(`${yellow("Reinit cancelled.")} Nothing was changed.`);
       return;
     }
 
     archivedBrain = archiveAndReinitializeAgentsDirectory();
-    log.step(
+    guidedLog(
       `Archived ${bold(String(archivedBrain.itemCount))} active item(s) as ${bold(`${archiveDirName}/${archivedBrain.name}/`)}`,
+      "step",
     );
   }
 
@@ -3231,6 +3827,7 @@ async function main() {
 
   let created;
   let existing;
+  let updated;
   let total;
   let pointers;
   let protection;
@@ -3243,13 +3840,15 @@ async function main() {
     if (!migration) migration = migrateToHandoffLayout();
     if (migration) warnings.push(...migration.warnings);
 
-    ({ created, existing, total } = ensureAgentsDirectory());
+    ({ created, existing, updated, total } = ensureAgentsDirectory());
     warnings.push(...migrateRootBackups());
 
     pointers = reconcilePointers(selected, { keepExisting: Boolean(archivedBrain) });
     protection = selected.map((env) => ({ env, status: protectFile(pointerPath(env)) }));
 
-    if (backupWasWritten) {
+    // Also when nothing was backed up this run: an older README in an
+    // existing folder gains the fixed-layout sentence.
+    if (backupWasWritten || isDirectory(path.join(handoffTarget, backupDirName))) {
       ensureBackupReadme();
     }
 
@@ -3292,7 +3891,7 @@ async function main() {
   const unprotected = protection.filter((entry) => entry.status !== "read-only");
 
   const summaryRows = [
-    [`${handoffLabel}/`, getAgentsDirectoryStatus(created, existing, total)],
+    [`${handoffLabel}/`, getAgentsDirectoryStatus(created, existing, total, updated)],
     ...pointers.results.map(({ env, status }) => [env.fileName, getAgentsFileStatus(status)]),
     [
       "protection",
@@ -3340,6 +3939,13 @@ async function main() {
         `  ${bold(migration.snapshot.relativePath)}`,
         `Everything else in ${agentsDirName}/ was left alone.`,
       );
+
+      if (migration.customReadme) {
+        migrationNote.push(
+          `Your customised ${agentsDirName}/README.md is in that copy; the live`,
+          "README now describes the new layout. Re-apply what you still want.",
+        );
+      }
     }
 
     infoNotes.push(migrationNote.join("\n"));
@@ -3396,18 +4002,18 @@ async function main() {
         : `${bold(`${fileNames.length} pointer files`)} now point agents at ${handoffLabel}/`;
 
   if (interactive) {
-    note(alignRows(summaryRows), "Summary");
+    section(alignRows(summaryRows), "Summary");
 
     for (const message of infoNotes) {
-      log.info(message);
+      guidedLog(message, "info");
     }
 
     for (const message of warnings) {
-      log.warn(message);
+      guidedLog(message, "warn");
     }
 
-    note(nextSteps(fileNames), "Next steps");
-    outro(`${green("Done")} — ${pointerSummary}`);
+    section(nextSteps(fileNames), "Next steps");
+    guidedOutro(`${green("Done")} — ${pointerSummary}`);
   } else {
     console.log(`${tag} Project brain ready ✅`);
     console.log("");
@@ -3446,5 +4052,9 @@ if (require.main === module) {
     legacyLayoutMap,
     interimLayoutMap,
     agentFiles,
+    agentFileBodies,
+    handoffFileNotice,
+    legacyHandoffReadmes,
+    legacyArchiveReadme,
   };
 }

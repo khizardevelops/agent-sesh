@@ -55,7 +55,7 @@ function seed(dir, { pointers, content, brain, skills }) {
     if (content === "template") {
       h.write(path.join(dir, name), h.templateFor(name));
     } else if (content === "legacy") {
-      h.write(path.join(dir, name), h.cli.legacyPointerTemplates[2].replace(/AGENTS\.md/g, name));
+      h.write(path.join(dir, name), h.cli.legacyPointerTemplates[h.cli.legacyPointerTemplates.length - 1].replace(/AGENTS\.md/g, name));
     } else {
       const custom = h.customPointer(name);
       sentinels[name] = custom.sentinel;

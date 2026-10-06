@@ -59,6 +59,7 @@
   "author": "khizardevelops",
   "license": "MIT",
   "dependencies": {
+    "@clack/core": "^1.4.2",
     "@clack/prompts": "^1.6.0"
   },
   "repository": {

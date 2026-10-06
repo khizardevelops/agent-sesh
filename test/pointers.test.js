@@ -255,7 +255,7 @@ describe("hand-written content", () => {
 describe("template recognition", () => {
   test("every historical template, under every pointer name, is discarded rather than backed up", () => {
     const bodies = [h.templateFor("AGENTS.md"), ...h.cli.legacyPointerTemplates];
-    assert.equal(bodies.length, 4, "current + three frozen entries");
+    assert.equal(bodies.length, 5, "current + four frozen entries");
 
     for (const [index, body] of bodies.entries()) {
       for (const name of h.pointerNames) {
@@ -408,7 +408,7 @@ describe("line endings", () => {
 
   test("a CRLF legacy template is retired as an unmodified template", () => {
     const dir = h.makeProject();
-    h.write(at(dir, "CLAUDE.md"), crlf(h.cli.legacyPointerTemplates[2].replace(/AGENTS\.md/g, "CLAUDE.md")));
+    h.write(at(dir, "CLAUDE.md"), crlf(h.cli.legacyPointerTemplates[h.cli.legacyPointerTemplates.length - 1].replace(/AGENTS\.md/g, "CLAUDE.md")));
     const result = h.run(dir, ["--uni"]);
     assert.equal(result.code, 0, result.out);
     assert.match(result.out, /retired\s+CLAUDE\.md \(unmodified template, removed\)/);

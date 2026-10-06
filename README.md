@@ -62,7 +62,7 @@ The knowledge that actually makes an agent useful — why the auth layer is stru
 - Root pointer files — `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `QWEN.md`, `IFLOW.md` — one for each environment you tick
 - Two local git hooks (`post-merge`, `post-checkout`), appended between markers so your Husky / LFS / custom hooks stay intact
 
-That's it. Your `package.json`, lockfile, source tree, CI config and build pipeline are never modified. The one dependency it has ([`@clack/prompts`](https://www.npmjs.com/package/@clack/prompts), for the interactive CLI) lives inside the `npx` cache and never reaches your app.
+That's it. Your `package.json`, lockfile, source tree, CI config and build pipeline are never modified. Its dependencies ([`@clack/prompts`](https://www.npmjs.com/package/@clack/prompts) and the [`@clack/core`](https://www.npmjs.com/package/@clack/core) engine it is built on, for the interactive CLI) live inside the `npx` cache and never reach your app.
 
 **Why AI-heavy stacks benefit most:** an LLM app carries an unusual amount of knowledge that isn't visible in the code — *why* the temperature is `0.2`, *why* streaming is chunked that way, which prompt version regressed, which model you moved off and what broke. That's exactly what `memory/decisions.md`, `references/assumptions.md` and `references/known-issues.md` exist to hold.
 
@@ -72,7 +72,7 @@ That's it. Your `package.json`, lockfile, source tree, CI config and build pipel
 
 There's no API to import and nothing to wire up — **the "code" is one command and the markdown it writes.**
 
-**1. Run it** — `npx agent-sesh@latest`, then tick the environments you use. The agents already installed on your machine are pre-selected. Full flag reference in [Quick Start](#quick-start) below.
+**1. Run it** — `npx agent-sesh@latest`, then tick the environments you use. Universal (`AGENTS.md`) is pre-selected; the agents found on your machine are listed so you can add their own files. Full flag reference in [Quick Start](#quick-start) below.
 
 **2. It writes a root pointer file per environment** — this is the full generated `AGENTS.md`; `CLAUDE.md` and the rest are the same text, talking about themselves
 (soft-wrapped here for width):
@@ -85,6 +85,10 @@ This project uses `.agents/handoff/` as its agent memory and handoff folder.
 IMPORTANT: Do not edit this AGENTS.md file for project memory, state, tasks,
 decisions, or handoff notes. This file is only a pointer. Put all project
 memory updates in `.agents/handoff/`.
+
+IMPORTANT: Never rename, move, or delete any folder or file inside
+`.agents/handoff/`, and never delete files there to clean up or start fresh.
+The layout is fixed; edit file contents only.
 
 Before making changes:
 1. Read `.agents/handoff/README.md`.
@@ -110,6 +114,8 @@ context in this project.
 **3. And it scaffolds `.agents/handoff/` with a heading-only skeleton** — every file ships as prompts for the agent to fill in, so it knows exactly where each kind of fact belongs. Here's the generated `memory/state.md`:
 
 ```markdown
+<!-- agent-sesh: never rename, move or delete this file or its folder. Edit the content only. See .agents/handoff/README.md. -->
+
 # State
 
 Describe how the project works right now. Keep this present-tense and accurate.
@@ -162,7 +168,7 @@ The agent reads the brain, does the work with full context, and updates `.agents
 
 ## Quick Start
 ```bash
-# Interactive: tick the environments you use (detected agents are pre-selected)
+# Interactive: tick the environments you use (Universal is pre-selected)
 npx agent-sesh@latest
 
 # Or say which pointer files you want. Flags combine.
@@ -185,62 +191,74 @@ your machine — and what it changed:
 ```txt
 ┌  🧠 agent-sesh  v#.#.#
 │
-◇  Workspace ────────────────────────────────────────────────────╮
-│                                                                │
-│  Project    my-app                                             │
-│  Location   ~/code/my-app                                      │
-│  Brain      not set up yet                                     │
-│  Pointer    none                                               │
-│  Skills     1 installed · grill-me                             │
-│  Agents     Claude Code, Codex, Gemini CLI, OpenCode detected  │
-│  Git        repository detected                                │
-│                                                                │
-├────────────────────────────────────────────────────────────────╯
+◇  Workspace
+│
+│  Project    my-app
+│  Location   ~/code/my-app
+│  Brain      not set up yet
+│  Pointer    none
+│  Skills     1 installed · grill-me
+│  Agents     Claude Code, Codex, Gemini CLI, OpenCode detected
+│  Git        repository detected
+│
+┣━━━━━━━━━━━━━━──────────╌╌╌╌┄┄
 │
 ◆  Which environments do you want to set up? (space toggles · enter confirms)
 │  ◼ 🟢 Universal — AGENTS.md (detected: Codex, OpenCode)
-│  ◼ 🟠 Claude Code — CLAUDE.md (detected: Claude Code)
-│  ◼ 🔵 Gemini CLI — GEMINI.md (detected: Gemini CLI)
+│  ◻ 🟠 Claude Code — CLAUDE.md
+│  ◻ 🔵 Gemini CLI — GEMINI.md
 │  ◻ 🟣 Qwen Code — QWEN.md
 │  ◻ ⚪ iFlow CLI — IFLOW.md
 │
 ◇  Project brain ready in .agents/handoff/
 │
-◇  Summary ──────────────────────────────────────╮
-│                                                │
-│  .agents/handoff/   15 files created           │
-│  AGENTS.md          created                    │
-│  CLAUDE.md          created                    │
-│  GEMINI.md          created                    │
-│  protection         read-only                  │
-│  git hooks          post-merge, post-checkout  │
-│  skills             1 preserved                │
-│                                                │
-├────────────────────────────────────────────────╯
+◇  Summary
 │
-◇  Next steps ───────────────────────────────────────────────────────╮
-│                                                                    │
-│  1  Start your AI session with @AGENTS.md (or @CLAUDE.md +1 more)  │
-│  2  Fill in .agents/handoff/references/overview.md                 │
-│  3  Keep .agents/handoff/memory/ current as you work               │
-│  4  Ask the AI to update .agents/handoff/ before you finish        │
-│                                                                    │
-├────────────────────────────────────────────────────────────────────╯
+│  .agents/handoff/   15 files created
+│  AGENTS.md          created
+│  protection         read-only
+│  git hooks          post-merge, post-checkout
+│  skills             1 preserved
 │
-└  Done — 3 pointer files now point agents at .agents/handoff/
+┣━━━━━━━━━━━━━━──────────╌╌╌╌┄┄
+│
+◇  Next steps
+│
+│  1  Start your AI session with @AGENTS.md
+│  2  Fill in .agents/handoff/references/overview.md
+│  3  Keep .agents/handoff/memory/ current as you work
+│  4  Ask the AI to update .agents/handoff/ before you finish
+│
+┣━━━━━━━━━━━━━━──────────╌╌╌╌┄┄
+│
+└  Done — AGENTS.md now points agents at .agents/handoff/
 ```
 
 Re-running is always safe. When a project is already set up, the first question
-becomes *switch environment* or *reinitialise*. Switching re-opens the same
-checklist with the pointer files you already have ticked: tick one more to add
-it, untick one to retire it.
+offers three things, with a box above them that explains in full whichever one
+the cursor is on:
 
-Choosing **Reinitialise** moves the active project brain into a dated
+- **⏫ Update** (the default — just press Enter) keeps your content and your
+  pointer files and brings them up to date with this version. On a project still
+  using an older agent-sesh layout it reads **Upgrade to the new layout**, and
+  moves everything into `.agents/handoff/` as described below. This is what you
+  want after updating agent-sesh.
+- **🔄 Change pointer files** re-opens the checklist with the pointer files you
+  already have ticked: tick one more to add it, untick one to retire it.
+- **🔵 Start over** archives the brain and begins again from blank templates.
+
+Choosing **Start over** moves the active project brain into a dated
 `.agents/handoff/archive/<timestamp>/` snapshot, including a manifest, then
-recreates the standard template files from scratch. Every root pointer is kept
-exactly as it is, and archived material is not part of the default agent-reading
-workflow. The archive is scoped to `.agents/handoff/` — anything else in
+recreates the standard template files from scratch. No root pointer is retired,
+and a pointer you have customised is kept exactly as it is; one that does not lead
+to `.agents/handoff/` (an older template, or a hand-written file) is refreshed,
+with a backup if it had content of its own. Archived material is not part of the
+default agent-reading workflow. The archive is scoped to `.agents/handoff/` — anything else in
 `.agents/`, `skills/` included, is never part of a snapshot.
+
+Everything hangs off a single guide line on the left, with a fixed-length rule
+closing each section — no boxes with a right edge or a full-width rule — so resizing the terminal never breaks the layout, and a
+line too long for a narrow window wraps with its guide.
 
 Colour is disabled automatically when output is piped, and honours
 [`NO_COLOR`](https://no-color.org). With flags, or in CI and other
@@ -279,6 +297,8 @@ project/
 The package does not ship a prebuilt `.agents/` folder. These files are generated on the client's computer when `npx agent-sesh` runs.
 
 The folder name is itself an instruction to the agent. **`memory/`** is read first and updated last — what exists now, how work flows through it, what is next, what just happened, what was decided. **`rules/`** is the standing guardrails, to be obeyed and rarely changed; it is deliberately tiny, because a short rules folder is one an agent actually reads every time. **`references/`** is consulted when relevant.
+
+**The layout is fixed.** Agents — Gemini especially — like to tidy up a folder they did not create: renaming files, merging them, deleting the ones that look empty. Every path in `.agents/handoff/` is how agent-sesh and every later session find the brain, so the rule *never rename, move or delete anything in here; edit the contents* is stated in the pointer file, in a section at the top of `.agents/handoff/README.md`, in the `archive/` and `old_agent_files/` READMEs, and in a one-line comment at the top of every template file.
 
 The names follow what the ecosystem already uses: `memory/` from the [.agents](https://github.com/bgreenwell/dotagents) conventions, `rules/` from Cursor and Cline, `references/` from the [Agent Skills](https://agentskills.io/specification) spec.
 
@@ -329,10 +349,15 @@ is what `npx skills` is for.
 
 **Upgrading from an earlier version?** The first run after updating moves your
 existing flat `.agents/*.md` files into the new folders automatically, renaming
-`context.md` to `references/overview.md`. Nothing is deleted: a copy of the old
-layout is written to `.agents/handoff/archive/<timestamp>-pre-handoff-migration/`
-first, and any file whose new home is already occupied is left where it is and
-reported rather than overwritten.
+`context.md` to `references/overview.md`, and moves `.agents/old_agent_files/`
+to `.agents/handoff/old_agent_files/`. The old `.agents/README.md` is replaced by
+the current one, which describes the new layout. Nothing is lost: a copy of the
+old layout is written to `.agents/handoff/archive/<timestamp>-pre-handoff-migration/`
+first. If a file's new home already exists and is still an untouched template,
+your file replaces it; if it holds anything else, your file is left where it is
+and reported rather than overwritten. Template files you never edited are
+upgraded in place when a newer version changes them; files you have written in
+are never touched.
 
 ### ⇄ One pointer per agent, switch any time
 
@@ -347,7 +372,8 @@ Each environment is one root file that an agent reads by default:
 | `--iflow` | `IFLOW.md` | iFlow CLI |
 
 A project can carry several at once — `npx agent-sesh --uni --claude` writes both,
-and the interactive checklist pre-selects the agents found on your machine. Every
+and the interactive checklist starts with Universal ticked and names the agents
+found on your machine next to their environment. Every
 pointer you keep is protected; every one you untick is retired. The rules never
 lose your writing:
 
@@ -491,8 +517,8 @@ root pointer files only, never into another tool's folder.
 
 ## Development
 
-Requires Node 20.19+ or 22.12+ (`@clack/prompts` is ESM-only and is loaded with
-`require`). No build step, no dev dependencies.
+Requires Node 20.19+ or 22.12+ (`@clack/prompts` and `@clack/core` are ESM-only
+and are loaded with `require`). No build step, no dev dependencies.
 
 ```bash
 npm test                  # the whole suite — node:test, no dependencies

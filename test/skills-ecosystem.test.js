@@ -88,7 +88,7 @@ describe("every skills folder survives every action", () => {
     h.write(h.handoff(dir, "memory", "state.md"), "# State\n\nreal content\n");
     const before = h.skillsView(h.snapshot(dir));
 
-    const reinit = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:Proceed;send:enter;wait:Done");
+    const reinit = h.pty(dir, "wait:What do you want to do;send:down;send:down;send:enter;wait:Proceed;send:enter;wait:Done");
     assert.equal(reinit.exit, 0, reinit.out);
     assert.match(reinit.out, /skills\s+2 preserved/);
     h.assertSameMap(assert, h.skillsView(h.snapshot(dir)), before, "reinit");
@@ -99,7 +99,7 @@ describe("every skills folder survives every action", () => {
     assert.deepEqual(archived, ["README.md", "manifest.json", "memory", "references", "rules"]);
 
     // Switch: keep only CLAUDE.md (deselect the first entry, Universal).
-    const sw = h.pty(dir, "wait:What do you want to do;send:enter;wait:pointer file;send:space;send:enter;wait:Done");
+    const sw = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:pointer file;send:space;send:enter;wait:Done");
     assert.equal(sw.exit, 0, sw.out);
     assert.ok(!h.exists(path.join(dir, "AGENTS.md")));
     assert.ok(h.exists(path.join(dir, "CLAUDE.md")));
