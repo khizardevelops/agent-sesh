@@ -34,9 +34,9 @@ function seedEveryFolder(dir) {
 }
 
 describe("registry", () => {
-  test("mirrors skills: 77 agents, 56 distinct project skills folders", () => {
-    assert.equal(h.cli.agentRegistry.length, 77);
-    assert.equal(folders.length, 56);
+  test("mirrors skills: 79 entries, 54 distinct project skills folders", () => {
+    assert.equal(h.cli.agentRegistry.length, 79);
+    assert.equal(folders.length, 54);
     assert.equal(folders[0], ".agents/skills");
     for (const agent of h.cli.agentRegistry) {
       assert.match(agent.id, /^[a-z0-9-]+$/);
@@ -99,7 +99,7 @@ describe("every skills folder survives every action", () => {
     assert.deepEqual(archived, ["README.md", "manifest.json", "memory", "references", "rules"]);
 
     // Switch: keep only CLAUDE.md (deselect the first entry, Universal).
-    const sw = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:pointer file;send:space;send:enter;wait:Done");
+    const sw = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:Which environments should have a pointer file;send:space;send:enter;wait:Done");
     assert.equal(sw.exit, 0, sw.out);
     assert.ok(!h.exists(path.join(dir, "AGENTS.md")));
     assert.ok(h.exists(path.join(dir, "CLAUDE.md")));
@@ -205,7 +205,7 @@ describe("skills awareness", () => {
     const home = h.makeHome(["claude-code", "codex"]);
     const result = h.run(dir, ["--agents"], { home });
     assert.equal(result.code, 0);
-    assert.match(result.out, /76 supported agents/);
+    assert.match(result.out, /78 supported agents/);
     for (const agent of h.cli.agentRegistry) {
       if (agent.hidden) continue;
       assert.ok(result.out.includes(agent.name), agent.name);

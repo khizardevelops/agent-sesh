@@ -76,8 +76,8 @@ const handoffFolderLabel = (relativePath) => {
 
 // ── agent ecosystem registry ──────────────────────────────────────
 //
-// Mirrors the agent table in vercel-labs/skills (src/agents.ts, v1.5.23): the
-// same 77 agents, the same project skills folders, the same install markers.
+// Mirrors the agent table in vercel-labs/skills (src/agents.ts, v1.7.0): the
+// same 79 entries, the same project skills folders, the same install markers.
 // `npm run check:registry` diffs this list against upstream main.
 //
 //   skillsDir  the folder `npx skills` installs into for that agent. agent-sesh
@@ -114,10 +114,11 @@ const agentRegistry = [
   { id: "deepagents", name: "Deep Agents", skillsDir: ".agents/skills", detect: ["~/.deepagents"] },
   { id: "devin", name: "Devin for Terminal", skillsDir: ".devin/skills", detect: ["config/devin"] },
   { id: "dexto", name: "Dexto", skillsDir: ".agents/skills", detect: ["~/.dexto"] },
-  { id: "droid", name: "Droid", skillsDir: ".factory/skills", detect: ["~/.factory"] },
+  { id: "droid", name: "Droid", skillsDir: ".agents/skills", detect: ["~/.factory"] },
   { id: "eve", name: "Eve", skillsDir: "agent/skills", detect: ["pkg:eve"] },
   { id: "firebender", name: "Firebender", skillsDir: ".agents/skills", detect: ["~/.firebender"] },
   { id: "forgecode", name: "ForgeCode", skillsDir: ".forge/skills", detect: ["~/.forge"] },
+  { id: "fx", name: "fx", skillsDir: ".fx/skills", detect: ["~/.fx"] },
   { id: "gemini-cli", name: "Gemini CLI", skillsDir: ".agents/skills", detect: ["~/.gemini"], pointer: "gemini" },
   { id: "github-copilot", name: "GitHub Copilot", skillsDir: ".agents/skills", detect: ["~/.copilot"] },
   { id: "goose", name: "Goose", skillsDir: ".goose/skills", detect: ["config/goose"] },
@@ -127,7 +128,7 @@ const agentRegistry = [
   { id: "jazz", name: "Jazz", skillsDir: ".jazz/skills", detect: ["~/.jazz", "./.jazz"] },
   { id: "junie", name: "Junie", skillsDir: ".junie/skills", detect: ["~/.junie"] },
   { id: "iflow-cli", name: "iFlow CLI", skillsDir: ".iflow/skills", detect: ["~/.iflow"], pointer: "iflow" },
-  { id: "kilo", name: "Kilo Code", skillsDir: ".kilocode/skills", detect: ["~/.kilocode"] },
+  { id: "kilo", name: "Kilo Code", skillsDir: ".agents/skills", detect: ["~/.kilo", "~/.kilocode"] },
   { id: "kimchi", name: "Kimchi", skillsDir: ".kimchi/skills", detect: ["~/.config/kimchi"] },
   { id: "kimi-code-cli", name: "Kimi Code CLI", skillsDir: ".agents/skills", detect: ["~/.kimi-code", "~/.kimi"] },
   { id: "kiro-cli", name: "Kiro CLI", skillsDir: ".kiro/skills", detect: ["~/.kiro"] },
@@ -142,7 +143,7 @@ const agentRegistry = [
   { id: "opencode", name: "OpenCode", skillsDir: ".agents/skills", detect: ["config/opencode"] },
   { id: "openhands", name: "OpenHands", skillsDir: ".openhands/skills", detect: ["~/.openhands"] },
   { id: "ona", name: "Ona", skillsDir: ".ona/skills", detect: ["~/.ona"] },
-  { id: "pi", name: "Pi", skillsDir: ".pi/skills", detect: ["~/.pi/agent"] },
+  { id: "pi", name: "Pi", skillsDir: ".agents/skills", detect: ["~/.pi/agent"] },
   { id: "posit-assistant", name: "Posit Assistant", skillsDir: ".posit/assistant/skills", detect: ["~/.posit/assistant", "~/.positai"] },
   { id: "qoder", name: "Qoder", skillsDir: ".qoder/skills", detect: ["~/.qoder"] },
   { id: "qoder-cn", name: "Qoder CN", skillsDir: ".qoder/skills", detect: ["~/.qoder-cn"] },
@@ -151,6 +152,7 @@ const agentRegistry = [
   { id: "reasonix", name: "Reasonix", skillsDir: ".reasonix/skills", detect: ["~/.reasonix"] },
   { id: "rovodev", name: "Rovo Dev", skillsDir: ".rovodev/skills", detect: ["~/.rovodev"] },
   { id: "roo", name: "Roo Code", skillsDir: ".roo/skills", detect: ["~/.roo"] },
+  { id: "sarvam-code", name: "Sarvam Code", skillsDir: ".agents/skills", detect: ["$SARVAM_HOME|~/.sarvam"] },
   { id: "tabnine-cli", name: "Tabnine CLI", skillsDir: ".tabnine/agent/skills", detect: ["~/.tabnine"] },
   { id: "terramind", name: "Terramind", skillsDir: ".terramind/skills", detect: ["~/.terramind"] },
   { id: "tinycloud", name: "Tinycloud", skillsDir: ".tinycloud/skills", detect: ["~/.tinycloud"] },

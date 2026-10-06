@@ -315,7 +315,7 @@ session state, moves, or archives `.agents/skills/` or anything else beside
 `handoff/`. The generated pointer tells agents the same thing.
 
 The [`skills`](https://github.com/vercel-labs/skills) CLI installs reusable
-`SKILL.md` instruction sets for the same 76 agents. The two tools are designed
+`SKILL.md` instruction sets for the same 78 agents. The two tools are designed
 to sit next to each other, in either order:
 
 ```bash
@@ -327,7 +327,7 @@ What agent-sesh guarantees about skills — every line of this is a test in `tes
 
 - **Nothing skills writes is ever touched.** Not the canonical copy in
   `.agents/skills/`, not the per-agent symlinks skills creates (`.claude/skills/…`,
-  `.windsurf/skills/…` and the rest of the 56 folders in the registry), not a
+  `.windsurf/skills/…` and the rest of the 54 folders in the registry), not a
   `--copy` install, not `skills-lock.json`. This holds through setup, switching,
   reinitialising and the upgrade migration, and it is enforced at runtime: every
   write agent-sesh makes goes through one guard that refuses any path outside
@@ -454,50 +454,50 @@ is where `npx skills add` installs for that agent — agent-sesh never writes th
 `npx agent-sesh --agents` prints the same list and marks the agents detected on
 your machine.
 
-#### `AGENTS.md` — Universal (`--uni`) · 72 agents
+#### `AGENTS.md` — Universal (`--uni`) · 74 agents
 
 The [open standard](https://agents.md), and the right pointer for every agent
 without a file of its own.
 
 | Agent | Skills folder | Agent | Skills folder |
 | --- | --- | --- | --- |
-| AdaL | `.adal/skills/` | Kimchi | `.kimchi/skills/` |
-| AiderDesk | `.aider-desk/skills/` | Kimi Code CLI | `.agents/skills/` |
-| Amp | `.agents/skills/` | Kiro CLI | `.kiro/skills/` |
-| Antigravity | `.agents/skills/` | Kode | `.kode/skills/` |
-| Antigravity CLI | `.agents/skills/` | Lingma | `.lingma/skills/` |
-| AstrBot | `data/skills/` | Loaf | `.agents/skills/` |
-| Augment | `.augment/skills/` | MCPJam | `.mcpjam/skills/` |
-| Autohand Code CLI | `.autohand/skills/` | MiniMax Code | `.minimax/skills/` |
-| Cline | `.agents/skills/` | Mistral Vibe | `.vibe/skills/` |
-| Code Studio | `.codestudio/skills/` | Moxby | `.moxby/skills/` |
-| CodeArts Agent | `.codeartsdoer/skills/` | Mux | `.mux/skills/` |
-| CodeBuddy | `.codebuddy/skills/` | Neovate | `.neovate/skills/` |
-| Codemaker | `.codemaker/skills/` | Ona | `.ona/skills/` |
-| Codex | `.agents/skills/` | OpenClaw | `skills/` |
-| Command Code | `.commandcode/skills/` | OpenCode | `.agents/skills/` |
-| Continue | `.continue/skills/` | OpenHands | `.openhands/skills/` |
-| Cortex Code | `.cortex/skills/` | Pi | `.pi/skills/` |
-| Crush | `.crush/skills/` | Pochi | `.pochi/skills/` |
-| Cursor | `.agents/skills/` | Posit Assistant | `.posit/assistant/skills/` |
-| Deep Agents | `.agents/skills/` | PromptScript | `.agents/skills/` |
-| Devin for Terminal | `.devin/skills/` | Qoder | `.qoder/skills/` |
-| Dexto | `.agents/skills/` | Qoder CN | `.qoder/skills/` |
-| Droid | `.factory/skills/` | Reasonix | `.reasonix/skills/` |
-| Eve | `agent/skills/` | Replit | `.agents/skills/` |
-| Firebender | `.agents/skills/` | Roo Code | `.roo/skills/` |
-| ForgeCode | `.forge/skills/` | Rovo Dev | `.rovodev/skills/` |
-| GitHub Copilot | `.agents/skills/` | Tabnine CLI | `.tabnine/agent/skills/` |
-| Goose | `.goose/skills/` | Terramind | `.terramind/skills/` |
-| Grok Build | `.grok/skills/` | Tinycloud | `.tinycloud/skills/` |
-| Hermes Agent | `.hermes/skills/` | Trae | `.trae/skills/` |
-| IBM Bob | `.bob/skills/` | Trae CN | `.trae/skills/` |
-| inference.sh | `.inferencesh/skills/` | Warp | `.agents/skills/` |
-| Jazz | `.jazz/skills/` | Windsurf | `.windsurf/skills/` |
-| Junie | `.junie/skills/` | ZCode | `.zcode/skills/` |
-| Kilo Code | `.kilocode/skills/` | Zed | `.agents/skills/` |
-| | | Zencoder | `.zencoder/skills/` |
-| | | Zenflow | `.zencoder/skills/` |
+| AdaL | `.adal/skills/` | Kimi Code CLI | `.agents/skills/` |
+| AiderDesk | `.aider-desk/skills/` | Kiro CLI | `.kiro/skills/` |
+| Amp | `.agents/skills/` | Kode | `.kode/skills/` |
+| Antigravity | `.agents/skills/` | Lingma | `.lingma/skills/` |
+| Antigravity CLI | `.agents/skills/` | Loaf | `.agents/skills/` |
+| AstrBot | `data/skills/` | MCPJam | `.mcpjam/skills/` |
+| Augment | `.augment/skills/` | MiniMax Code | `.minimax/skills/` |
+| Autohand Code CLI | `.autohand/skills/` | Mistral Vibe | `.vibe/skills/` |
+| Cline | `.agents/skills/` | Moxby | `.moxby/skills/` |
+| Code Studio | `.codestudio/skills/` | Mux | `.mux/skills/` |
+| CodeArts Agent | `.codeartsdoer/skills/` | Neovate | `.neovate/skills/` |
+| CodeBuddy | `.codebuddy/skills/` | Ona | `.ona/skills/` |
+| Codemaker | `.codemaker/skills/` | OpenClaw | `skills/` |
+| Codex | `.agents/skills/` | OpenCode | `.agents/skills/` |
+| Command Code | `.commandcode/skills/` | OpenHands | `.openhands/skills/` |
+| Continue | `.continue/skills/` | Pi | `.agents/skills/` |
+| Cortex Code | `.cortex/skills/` | Pochi | `.pochi/skills/` |
+| Crush | `.crush/skills/` | Posit Assistant | `.posit/assistant/skills/` |
+| Cursor | `.agents/skills/` | PromptScript | `.agents/skills/` |
+| Deep Agents | `.agents/skills/` | Qoder | `.qoder/skills/` |
+| Devin for Terminal | `.devin/skills/` | Qoder CN | `.qoder/skills/` |
+| Dexto | `.agents/skills/` | Reasonix | `.reasonix/skills/` |
+| Droid | `.agents/skills/` | Replit | `.agents/skills/` |
+| Eve | `agent/skills/` | Roo Code | `.roo/skills/` |
+| Firebender | `.agents/skills/` | Rovo Dev | `.rovodev/skills/` |
+| ForgeCode | `.forge/skills/` | Sarvam Code | `.agents/skills/` |
+| fx | `.fx/skills/` | Tabnine CLI | `.tabnine/agent/skills/` |
+| GitHub Copilot | `.agents/skills/` | Terramind | `.terramind/skills/` |
+| Goose | `.goose/skills/` | Tinycloud | `.tinycloud/skills/` |
+| Grok Build | `.grok/skills/` | Trae | `.trae/skills/` |
+| Hermes Agent | `.hermes/skills/` | Trae CN | `.trae/skills/` |
+| IBM Bob | `.bob/skills/` | Warp | `.agents/skills/` |
+| inference.sh | `.inferencesh/skills/` | Windsurf | `.windsurf/skills/` |
+| Jazz | `.jazz/skills/` | ZCode | `.zcode/skills/` |
+| Junie | `.junie/skills/` | Zed | `.agents/skills/` |
+| Kilo Code | `.agents/skills/` | Zencoder | `.zencoder/skills/` |
+| Kimchi | `.kimchi/skills/` | Zenflow | `.zencoder/skills/` |
 
 #### Agents with a root file of their own
 

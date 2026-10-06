@@ -128,7 +128,7 @@ describe("existing project", { skip }, () => {
 
     const r = h.pty(
       dir,
-      "wait:What do you want to do;send:down;send:enter;wait:pointer file;send:down;send:space;send:enter;wait:Done",
+      "wait:What do you want to do;send:down;send:enter;wait:Which environments should have a pointer file;send:down;send:space;send:enter;wait:Done",
     );
     assert.equal(r.exit, 0, r.out);
     assert.match(r.out, /Brain\s+\.agents\/handoff\/ · 15 files/);
@@ -141,7 +141,7 @@ describe("existing project", { skip }, () => {
     assert.match(r.out, /CLAUDE\.md\s+migrated from AGENTS\.md/);
     assertFits(r.out);
 
-    const r2 = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:pointer file;send:space;send:enter;wait:Done");
+    const r2 = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:Which environments should have a pointer file;send:space;send:enter;wait:Done");
     assert.equal(r2.exit, 0, r2.out);
     assert.deepEqual(presentPointers(dir), ["CLAUDE.md"]);
     assert.match(r2.out, /backup\s+old_agent_files\/agents\/OLD_AGENTS_1\.md/);
@@ -219,7 +219,7 @@ describe("existing project", { skip }, () => {
 
     for (const steps of [
       "wait:What do you want to do;send:ctrlc",
-      "wait:What do you want to do;send:down;send:enter;wait:pointer file;send:ctrlc",
+      "wait:What do you want to do;send:down;send:enter;wait:Which environments should have a pointer file;send:ctrlc",
       "wait:What do you want to do;send:down;send:down;send:enter;wait:Proceed;send:ctrlc",
     ]) {
       const r = h.pty(dir, steps);
@@ -324,7 +324,7 @@ describe("existing project", { skip }, () => {
     for (const flat of Object.keys(h.cli.legacyLayoutMap)) h.write(path.join(dir, ".agents", flat), `# ${flat}\n`);
     h.write(at(dir, "AGENTS.md"), h.cli.legacyPointerTemplates[h.cli.legacyPointerTemplates.length - 1]);
 
-    const r = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:pointer file;send:enter;wait:Done");
+    const r = h.pty(dir, "wait:What do you want to do;send:down;send:enter;wait:Which environments should have a pointer file;send:enter;wait:Done");
     assert.equal(r.exit, 0, r.out);
     assert.match(r.out, /Brain\s+\.agents\/ · 15 files · will migrate/);
     assert.match(r.out, /migrated\s+15 item\(s\) moved in/);

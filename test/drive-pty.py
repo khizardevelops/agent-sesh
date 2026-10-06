@@ -7,7 +7,10 @@ module — node-pty would need `npm install-scripts approve` on each machine.
 
 Usage: pty.py <workdir> <script> <command> [args...]
   <script> is a semicolon-separated list of steps:
-     wait:SUBSTRING   block until SUBSTRING has appeared in the output
+     wait:SUBSTRING   block until SUBSTRING appears in output printed since
+                      the last send — never in text an earlier prompt left
+                      on screen, which would let the next key race ahead of
+                      the prompt it is meant for
      send:KEY         send a key — down, up, enter, space, ctrlc, esc, tab,
                       or any literal text
      sleep:SECONDS    pause
@@ -55,6 +58,12 @@ def main():
         os.execvp(cmd[0], cmd)
 
     buf = b""
+    # Where in the stripped output the last key was sent. A wait only looks
+    # past this point: "pointer file" is both an option on the first prompt
+    # and the question of the second, and matching the stale copy sent the
+    # next key before the second prompt existed. Fast machines got away with
+    # it; GitHub's macOS runners dropped the key and timed out.
+    since = 0
     deadline = time.time() + float(os.environ.get("PTY_DEADLINE", "60"))
     step = 0
     exit_code = None
@@ -74,10 +83,11 @@ def main():
             kind, _, val = steps[step].partition(":")
             plain = ANSI.sub(b"", buf).decode("utf8", "replace")
             if kind == "wait":
-                if val in plain:
+                if val in plain[since:]:
                     step += 1
                     continue
             elif kind == "send":
+                since = len(plain)
                 os.write(fd, KEYS.get(val, val.encode()))
                 time.sleep(0.35)
                 step += 1

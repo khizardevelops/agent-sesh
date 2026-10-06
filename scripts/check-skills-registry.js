@@ -43,10 +43,15 @@ function fetchText(url, redirects = 0) {
 // Pulls name / displayName / skillsDir out of each entry of the `agents`
 // record. The file is TypeScript, but those three fields are plain string
 // literals in every entry, so a regex is enough — and it fails loudly if
-// the shape ever changes.
+// the shape ever changes. Line comments may sit between the fields (droid
+// and pi carry one), so the gaps allow them; missing that once reported both
+// agents as removed upstream.
 function parseUpstream(source) {
-  const pattern =
-    /name:\s*'([^']+)',\s*displayName:\s*'([^']+)',\s*skillsDir:\s*'([^']+)'/g;
+  const gap = String.raw`,(?:\s|//[^\n]*)*`;
+  const pattern = new RegExp(
+    String.raw`name:\s*'([^']+)'${gap}displayName:\s*'([^']+)'${gap}skillsDir:\s*'([^']+)'`,
+    "g",
+  );
   const agents = [];
   let match;
   while ((match = pattern.exec(source))) {
