@@ -16,6 +16,11 @@ const skip = h.skipWithoutPython();
 const at = (dir, name) => path.join(dir, name);
 const presentPointers = (dir) => h.pointerNames.filter((name) => h.exists(at(dir, name)));
 
+// A project set up for the first time is asked about the planning backlog
+// after the environments. Enter takes the default, Yes.
+const ADD_PLANNING = "wait:Add a planning backlog;send:enter";
+const SKIP_PLANNING = "wait:Add a planning backlog;send:down;send:enter";
+
 // Everything clack prints must fit the terminal: a folded box line breaks
 // the list, and a folded note wraps mid-path. The prompt itself is excluded —
 // it is redrawn in place, and with the cursor movement stripped its frames
@@ -35,10 +40,14 @@ function assertFits(out, cols = 80) {
 describe("fresh project", { skip }, () => {
   test("no agents detected: Universal alone is pre-selected", () => {
     const dir = h.makeProject();
-    const r = h.pty(dir, "wait:Which environments do you want to set up;send:enter;wait:Done");
+    const r = h.pty(dir, `wait:Which environments do you want to set up;send:enter;${ADD_PLANNING};wait:Done`);
     assert.equal(r.exit, 0, r.out);
     assert.match(r.out, /Brain\s+not set up yet/);
     assert.match(r.out, /Pointer\s+none/);
+    assert.match(r.out, /Planning\s+not set up yet · no docs\/ folder/);
+    assert.match(r.out, /docs\/planning\/\s+5 files created/);
+    assert.match(r.out, /5  Track open ideas and bugs in docs\/planning\//);
+    assert.deepEqual(fs.readdirSync(path.join(dir, "docs")), ["planning"]);
     assert.match(r.out, /Skills\s+none installed/);
     assert.match(r.out, /Agents\s+none detected/);
     assert.match(r.out, /◼ 🟢 Universal — AGENTS\.md/);
@@ -51,8 +60,10 @@ describe("fresh project", { skip }, () => {
   test("detected agents are named, but only Universal is pre-selected", () => {
     const dir = h.makeProject();
     const home = h.makeHome(["claude-code", "codex", "gemini-cli", "opencode"]);
-    const r = h.pty(dir, "wait:Which environments do you want to set up;send:enter;wait:Done", [], { home });
+    const r = h.pty(dir, `wait:Which environments do you want to set up;send:enter;${SKIP_PLANNING};wait:Done`, [], { home });
     assert.equal(r.exit, 0, r.out);
+    assert.ok(!h.exists(path.join(dir, "docs")), "declining the backlog writes nothing to docs/");
+    assert.doesNotMatch(r.out, /docs\/planning\/\s+\d/);
     assert.match(r.out, /Agents\s+Claude Code, Codex, Gemini CLI, OpenCode detected/);
     assert.match(r.out, /◼ 🟢 Universal — AGENTS\.md \(detected: Codex, OpenCode\)/);
     // clack shows a hint only on the focused or ticked option.
@@ -66,7 +77,7 @@ describe("fresh project", { skip }, () => {
   test("a detected agent's pointer is one keypress away", () => {
     const dir = h.makeProject();
     const home = h.makeHome(["claude-code"]);
-    const r = h.pty(dir, "wait:Which environments do you want to set up;send:down;send:space;send:enter;wait:Done", [], { home });
+    const r = h.pty(dir, `wait:Which environments do you want to set up;send:down;send:space;send:enter;${SKIP_PLANNING};wait:Done`, [], { home });
     assert.equal(r.exit, 0, r.out);
     assert.match(r.out, /Claude Code — CLAUDE\.md \(detected: Claude Code\)/);
     assert.deepEqual(presentPointers(dir), ["AGENTS.md", "CLAUDE.md"]);
@@ -77,7 +88,7 @@ describe("fresh project", { skip }, () => {
     const dir = h.makeProject();
     const r = h.pty(
       dir,
-      "wait:Which environments;send:space;send:down;send:down;send:down;send:space;send:down;send:space;send:enter;wait:Done",
+      `wait:Which environments;send:space;send:down;send:down;send:down;send:space;send:down;send:space;send:enter;${SKIP_PLANNING};wait:Done`,
     );
     assert.equal(r.exit, 0, r.out);
     assert.deepEqual(presentPointers(dir), ["QWEN.md", "IFLOW.md"]);
@@ -88,7 +99,7 @@ describe("fresh project", { skip }, () => {
 
   test("selecting nothing is refused, then a choice goes through", () => {
     const dir = h.makeProject();
-    const r = h.pty(dir, "wait:Which environments;send:space;send:enter;wait:at least one;send:down;send:space;send:enter;wait:Done");
+    const r = h.pty(dir, `wait:Which environments;send:space;send:enter;wait:at least one;send:down;send:space;send:enter;${SKIP_PLANNING};wait:Done`);
     assert.equal(r.exit, 0, r.out);
     assert.deepEqual(presentPointers(dir), ["CLAUDE.md"]);
   });
@@ -103,13 +114,13 @@ describe("fresh project", { skip }, () => {
 
   test("no repository: accepting the offer installs hooks, declining explains", () => {
     const yes = h.makeProject({ git: false });
-    const r1 = h.pty(yes, "wait:Which environments;send:enter;wait:Create one;send:enter;wait:Done");
+    const r1 = h.pty(yes, `wait:Which environments;send:enter;${SKIP_PLANNING};wait:Create one;send:enter;wait:Done`);
     assert.equal(r1.exit, 0, r1.out);
     assert.match(r1.out, /git hooks\s+post-merge, post-checkout/);
     assert.ok(h.exists(path.join(yes, ".git", "hooks", "post-merge")));
 
     const no = h.makeProject({ git: false });
-    const r2 = h.pty(no, "wait:Which environments;send:enter;wait:Create one;send:down;send:enter;wait:Done");
+    const r2 = h.pty(no, `wait:Which environments;send:enter;${SKIP_PLANNING};wait:Create one;send:down;send:enter;wait:Done`);
     assert.equal(r2.exit, 0, r2.out);
     assert.match(r2.out, /git hooks\s+not installed/);
     assert.match(r2.out, /protection hooks were not installed/);

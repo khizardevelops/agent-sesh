@@ -76,7 +76,7 @@ describe("flags", () => {
     const bad = h.run(dir, ["--cursor"]);
     assert.equal(bad.code, 1);
     assert.match(bad.out, /Unrecognised argument: --cursor/);
-    assert.match(bad.out, /--uni \| --claude \| --gemini \| --qwen \| --iflow \| --agents/);
+    assert.match(bad.out, /--uni \| --claude \| --gemini \| --qwen \| --iflow \| --planning \| --agents/);
     assert.ok(!h.exists(at(dir, ".agents")));
 
     const help = h.run(dir, ["--help"]);

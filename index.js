@@ -74,9 +74,40 @@ const handoffFolderLabel = (relativePath) => {
   return parent ? `${handoffLabel}/${parent}/` : `${handoffLabel}/`;
 };
 
+// `docs/planning/` — the optional planning backlog. It is the one place outside
+// `.agents/handoff/` and the pointer files that agent-sesh writes to, and only
+// in a run that asked for it. See "planning backlog" below.
+const docsDirName = "docs";
+const planningDirName = "planning";
+
+// An existing Docs/ (any case) is used rather than a new docs/ beside it. A
+// case-sensitive disk would hold both, and git cannot check that tree out on
+// macOS or Windows.
+function resolveDocsDirName() {
+  let entries;
+  try {
+    entries = fs.readdirSync(projectRoot);
+  } catch {
+    return docsDirName;
+  }
+  if (entries.includes(docsDirName)) return docsDirName;
+  return (
+    entries.find(
+      (entry) => entry.toLowerCase() === docsDirName && isDirectory(path.join(projectRoot, entry)),
+    ) || docsDirName
+  );
+}
+
+const docsName = resolveDocsDirName();
+const docsTarget = path.join(projectRoot, docsName);
+const planningTarget = path.join(docsTarget, planningDirName);
+const planningLabel = `${docsName}/${planningDirName}`;
+
+const planningPath = (relativePath) => path.join(planningTarget, ...relativePath.split("/"));
+
 // ── agent ecosystem registry ──────────────────────────────────────
 //
-// Mirrors the agent table in vercel-labs/skills (src/agents.ts, v1.7.0): the
+// Mirrors the agent table in vercel-labs/skills (src/agents.ts, v1.9.0): the
 // same 79 entries, the same project skills folders, the same install markers.
 // `npm run check:registry` diffs this list against upstream main.
 //
@@ -118,7 +149,7 @@ const agentRegistry = [
   { id: "eve", name: "Eve", skillsDir: "agent/skills", detect: ["pkg:eve"] },
   { id: "firebender", name: "Firebender", skillsDir: ".agents/skills", detect: ["~/.firebender"] },
   { id: "forgecode", name: "ForgeCode", skillsDir: ".forge/skills", detect: ["~/.forge"] },
-  { id: "fx", name: "fx", skillsDir: ".fx/skills", detect: ["~/.fx"] },
+  { id: "fx", name: "fx", skillsDir: ".agents/skills", detect: ["~/.fx"] },
   { id: "gemini-cli", name: "Gemini CLI", skillsDir: ".agents/skills", detect: ["~/.gemini"], pointer: "gemini" },
   { id: "github-copilot", name: "GitHub Copilot", skillsDir: ".agents/skills", detect: ["~/.copilot"] },
   { id: "goose", name: "Goose", skillsDir: ".goose/skills", detect: ["config/goose"] },
@@ -330,6 +361,14 @@ files and every later session find the brain by these exact paths.
 
 - ${archiveDirName}/: historical project-brain snapshots.
 - ${backupDirName}/: backups of previous root pointer files.
+
+## Planning Backlog
+
+If the project has \`${docsDirName}/${planningDirName}/\`, that folder is its durable backlog: open
+ideas in ideas.md, unpatched bugs in bugs.md, and finished items in its
+archive/. Read ${docsDirName}/${planningDirName}/README.md, ideas.md and bugs.md before
+proposing or starting work. Session state stays in this folder; the backlog
+stays there.
 
 ## Outside This Folder
 
@@ -649,6 +688,79 @@ function isUntouchedTemplate(relativePath, content) {
 //
 // NEVER edit an entry here — append the outgoing README when it changes.
 const legacyHandoffReadmes = [
+  // 1.2.0: before the planning backlog section. Literal folder names, for the
+  // same reason as the pointer entries below.
+  `# .agents/handoff
+
+This folder is the project brain for AI agents working in this repository.
+
+## Fixed Layout — Do Not Rename, Move Or Delete
+
+Every folder and file name in here is fixed. agent-sesh, the root pointer
+files and every later session find the brain by these exact paths.
+
+- Never rename, move or delete memory/, rules/, references/, archive/
+  or old_agent_files/, or any file inside them.
+- Never delete a file to clean up or start fresh, and never replace one with a
+  differently named copy. Edit the content instead; empty sections are fine.
+- If a file looks obsolete, rewrite its content and note why in
+  memory/last-session.md.
+
+## Required Agent Workflow
+
+1. Read this file first.
+2. Read every other file in this folder before changing code.
+3. Keep the relevant files updated as work progresses.
+4. Before ending a session, update memory/state.md, memory/tasks.md,
+   and memory/last-session.md.
+5. Do not read archive/ by default. Open a specific snapshot only when
+   the task needs historical context.
+
+## Layout
+
+- memory/: mutable session state. Expect to rewrite these as work moves.
+- rules/: standing guardrails. Obey these; change them rarely and deliberately.
+- references/: project background and tracked problems. Consult as needed.
+
+## Files
+
+### memory/ — session state
+
+- memory/state.md: current implementation status and system shape.
+- memory/pipeline.md: how work and data flow through the system end to end.
+- memory/tasks.md: next actionable tasks.
+- memory/last-session.md: handoff notes from the most recent session.
+- memory/decisions.md: settled technical decisions and tradeoffs.
+
+### rules/ — standing guardrails
+
+- rules/style.md: coding and writing style preferences.
+- rules/constraints.md: hard rules and limits.
+
+### references/ — background and tracked problems
+
+- references/overview.md: project intent, goals, and non-goals.
+- references/glossary.md: project-specific terms.
+- references/roadmap.md: near-future direction.
+- references/assumptions.md: what is being taken as true, and what still needs verification.
+- references/bugs.md: active defects that can be fixed within the current foundational technology.
+- references/known-issues.md: foundational technology limits that require replacement or architectural change to resolve.
+- references/commands.md: project-specific command reference.
+
+### Not part of default context
+
+- archive/: historical project-brain snapshots.
+- old_agent_files/: backups of previous root pointer files.
+
+## Outside This Folder
+
+\`.agents/\` is a shared folder. \`.agents/skills/\` holds skills installed
+with \`npx skills\` (skills.sh): on-demand instructions you load yourself when a task
+matches one. They are not session state. Anything else sitting beside
+\`handoff/\` belongs to you or to other tools. agent-sesh never creates,
+moves, or archives any of it.
+`,
+
   // 1.1.0 – 1.1.1: `.agents/handoff/` before the fixed-layout section.
   `# ${handoffLabel}
 
@@ -1037,6 +1149,186 @@ default and open a specific snapshot only when a task needs historical context.
 Snapshots are never automatically deleted or merged back into the active
 project brain.
 `;
+
+// ── planning backlog templates ────────────────────────────────────
+//
+// docs/planning/ is the project's durable backlog: open ideas and unpatched
+// bugs that outlive any one session, with finished items moved into its own
+// archive/. .agents/handoff/ stays the session ledger. The README is the
+// workflow agents follow; the other four are skeletons for people to fill.
+//
+// Unlike the brain, these are the user's documents from the moment they are
+// written: no layout notice, no protection, and never rewritten. When a body
+// here changes, nothing on disk follows unless the user asks for the backlog
+// again and the file still holds the old body byte for byte — keep the
+// outgoing body in a frozen list then, as legacyHandoffReadmes does.
+const planningFiles = {
+  "README.md": `# Planning
+
+How the project's active ideas and bugs are tracked, and how agents should use this folder.
+
+## What lives here
+
+| Path | Holds | Edited? |
+|---|---|---|
+| [\`ideas.md\`](./ideas.md) | Current, unimplemented ideas and planned work. | Yes |
+| [\`bugs.md\`](./bugs.md) | Current, unpatched bugs. | Yes |
+| [\`${archiveDirName}/\`](./${archiveDirName}/) | Frozen history of finished ideas and fixed bugs. | No |
+| \`README.md\` | This workflow. | Rarely |
+
+Finished work does not stay here. It moves to [\`${archiveDirName}/\`](./${archiveDirName}/):
+
+\`\`\`text
+${planningLabel}/ideas.md   ->   ${planningLabel}/${archiveDirName}/ideas.md
+${planningLabel}/bugs.md    ->   ${planningLabel}/${archiveDirName}/bugs.md
+\`\`\`
+
+Planning keeps its history inside this folder, so all planning data stays together. If the project
+archives other documents somewhere else, such as \`${docsName}/${archiveDirName}/\`, planning is the exception: its
+history stays in \`${planningLabel}/${archiveDirName}/\`.
+
+## The rule
+
+**The active files contain only what is still open.** If an idea ships or is rejected, or a bug is
+fixed, move it to the archive under a dated heading and delete it from the active file. Do not keep
+a done item "for history" in the active file.
+
+History is frozen. If an archived entry disagrees with an active one, the active one wins.
+
+## Before you start
+
+1. Read [\`ideas.md\`](./ideas.md) and [\`bugs.md\`](./bugs.md) before proposing or starting work.
+2. Check \`${handoffLabel}/${memoryDirName}/state.md\`, \`tasks.md\` and \`last-session.md\` for current session
+   state. Those files are the session ledger; this folder is the durable backlog.
+3. Check \`${handoffLabel}/${referencesDirName}/bugs.md\` for agent-tracked defects with root causes.
+4. Do not read \`${planningLabel}/${archiveDirName}/\` by default. Open a specific archived file only when the
+   task needs historical context.
+
+## Adding an idea
+
+- Put it in the closest section of \`ideas.md\`: **Product**, **Technical** or **UI**.
+- Use \`- [ ] **Short title.**\` followed by one or two sentences saying what to do and why.
+- Include evidence or a link when the idea depends on a measurement, a dependency or an external
+  service.
+- If the idea is really a bug, put it in \`bugs.md\` instead.
+- If it is a design decision already made, record it in \`${handoffLabel}/${memoryDirName}/decisions.md\`,
+  not here.
+
+## Adding a bug
+
+- Put it under \`## General\` in \`bugs.md\`. Add another section only when the list grows enough to
+  need one.
+- Say what happens, what should happen, and how to reproduce it.
+- Include the platform and version when they matter.
+- Do not paste API keys, tokens or personal data.
+- If the bug has a known root cause, put the root cause in
+  \`${handoffLabel}/${referencesDirName}/bugs.md\` and keep the active entry user-facing.
+
+## Finishing an item
+
+1. Cut the entry from the active file.
+2. Paste it into the matching archive file under today's dated heading, \`## Archived YYYY-MM-DD\`.
+   The newest batch goes first: if today's heading does not exist yet, add it above the older ones.
+3. Keep enough context to understand it later: what was done, the date, and the evidence.
+4. For a rejected idea, say why it was rejected and link the evidence.
+5. Fix any links that pointed at the old location.
+6. Update the \`> Last reviewed: YYYY-MM-DD\` line at the top of the active file.
+
+Use the \`${archiveDirName}/\` folder under this directory. Do not create \`history.md\`, \`done.md\` or a second
+backlog.
+
+If something archived becomes relevant again, move it back to the active file and continue there.
+
+## Formatting
+
+- Follow the writing style in \`${handoffLabel}/${rulesDirName}/style.md\`.
+- Use one \`- [ ]\` checkbox per open item.
+- Lead with a bold title, then a short paragraph. Keep the active files scannable; they are not
+  logs.
+- Keep the idea sections in this order: **Product**, **Technical**, **UI**.
+- Dates are \`YYYY-MM-DD\`.
+
+## What not to put here
+
+- Session state, handoff notes or "what I did today": those belong in \`${handoffLabel}/\`.
+- Fixed bugs or shipped ideas: those belong in \`${planningLabel}/${archiveDirName}/\`.
+- Architecture decisions: \`${handoffLabel}/${memoryDirName}/decisions.md\`.
+- Near-future direction and priorities: \`${handoffLabel}/${referencesDirName}/roadmap.md\`.
+`,
+
+  "ideas.md": `# Ideas & Todo
+
+Current, unimplemented ideas only. Completed and rejected ideas are in
+[\`${archiveDirName}/ideas.md\`](./${archiveDirName}/ideas.md). Bugs live in [\`bugs.md\`](./bugs.md). The workflow is in
+[\`README.md\`](./README.md).
+
+When an idea ships or is rejected, move it to the archive under a dated heading and remove it
+from this file.
+
+> Last reviewed: YYYY-MM-DD.
+
+## Product
+
+## Technical
+
+## UI
+
+<!--
+- [ ] **Short title.** One or two sentences: what to do and why. Link the evidence it depends on.
+-->
+`,
+
+  "bugs.md": `# Bugs
+
+Current, unpatched bugs only. Fixed bugs are in [\`${archiveDirName}/bugs.md\`](./${archiveDirName}/bugs.md).
+Agent-tracked defects with root causes live in \`${handoffLabel}/${referencesDirName}/bugs.md\`. The workflow
+is in [\`README.md\`](./README.md).
+
+When a bug is fixed, move it to the archive under a dated heading and remove it from this file.
+
+> Last reviewed: YYYY-MM-DD.
+
+## General
+
+<!--
+- [ ] **Short title.** What happens, what should happen, and how to reproduce it. Include the
+  platform and version when they matter.
+-->
+`,
+
+  [`${archiveDirName}/ideas.md`]: `# Archived ideas
+
+> Frozen history of finished and rejected ideas from \`${planningLabel}/ideas.md\`. Current work is in
+> [\`${planningLabel}/ideas.md\`](../ideas.md).
+
+<!--
+Newest batch first, each under a dated heading:
+
+## Archived YYYY-MM-DD
+
+### Short title (implemented YYYY-MM-DD)
+
+What was done, and the evidence. A rejected idea reads "(rejected YYYY-MM-DD)" and says why,
+with a link to the evidence.
+-->
+`,
+
+  [`${archiveDirName}/bugs.md`]: `# Archived bugs
+
+> Frozen history of fixed bugs from \`${planningLabel}/bugs.md\`. Current bugs are in
+> [\`${planningLabel}/bugs.md\`](../bugs.md).
+
+<!--
+Newest batch first, each under a dated heading:
+
+## Archived YYYY-MM-DD
+
+### Short title (fixed YYYY-MM-DD)
+
+What was wrong, what changed, and how the fix was verified.
+-->
+`,
+};
 
 // ── small fs helpers ──────────────────────────────────────────────
 
@@ -1446,7 +1738,8 @@ function describeRemainingLock(filePath) {
 //
 // The first invariant, as code: agent-sesh writes inside .agents/handoff/, to
 // its own pointer files at the project root, and to the git hooks directory —
-// nowhere else. Every mutation helper below calls this first, so a refactor
+// nowhere else, apart from docs/planning/ in a run that asked for the planning
+// backlog. Every mutation helper below calls this first, so a refactor
 // that reaches for .agents/skills/ (or any of the other skills folders in the
 // registry) fails loudly instead of quietly moving someone's skills.
 //
@@ -1461,10 +1754,17 @@ function isInside(parent, child) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+// Set by main() once a run has asked for the planning backlog, and not before:
+// docs/planning/ is out of reach on every other run.
+let planningInScope = false;
+
 function isOwnedPath(candidate, { asSource = false } = {}) {
   const resolved = path.resolve(candidate);
 
   if (isInside(handoffTarget, resolved)) return true;
+  // Never as a source: agent-sesh adds files there, and never moves or
+  // removes one.
+  if (planningInScope && !asSource && isInside(planningTarget, resolved)) return true;
   // path.relative rather than ===: case-insensitive where the filesystem is.
   if (pointerEnvironments.some((env) => path.relative(resolved, pointerPath(env)) === "")) {
     return true;
@@ -2760,6 +3060,240 @@ function getAgentsFileStatus(status) {
   return `created; previous file saved as ${status}`;
 }
 
+// ── planning backlog ──────────────────────────────────────────────
+//
+// Written only in a run that asked for it, and only ever added to. Every file
+// is created with O_EXCL, so a name that is already taken — the user's own
+// README, a file they have filled in, a folder, even a dangling symlink — is
+// never written through, whatever changed between looking and writing.
+// Nothing under docs/ is moved, archived, protected or deleted, and Start over
+// never reaches it: the backlog is the user's, not part of the brain.
+
+const PLANNING_FLAG = "--planning";
+
+// lstat rather than existsSync: a dangling symlink occupies its name too.
+function pathTaken(candidate) {
+  try {
+    fs.lstatSync(candidate);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Entries in docs/planning/ that are not one of agent-sesh's five files.
+// Only shown in the Workspace row, so the user sees their own setup counted.
+function countOwnPlanningEntries() {
+  const ours = new Set(Object.keys(planningFiles));
+  const ourFolders = new Set(
+    Object.keys(planningFiles)
+      .map((relativePath) => relativePath.split("/").slice(0, -1).join("/"))
+      .filter(Boolean),
+  );
+
+  let count = 0;
+  const walk = (relativeDir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(relativeDir ? planningPath(relativeDir) : planningTarget);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const relativePath = relativeDir ? `${relativeDir}/${entry}` : entry;
+      if (ours.has(relativePath)) continue;
+      if (ourFolders.has(relativePath) && isDirectory(planningPath(relativePath))) {
+        walk(relativePath);
+        continue;
+      }
+      count += 1;
+    }
+  };
+
+  walk("");
+  return count;
+}
+
+// Read-only, so it runs before any prompt: the Workspace row, the setup
+// question and the menu entry all describe exactly what a run would do.
+//
+// Each of agent-sesh's files is one of:
+//   missing  not there; it would be created
+//   current  there, and byte for byte agent-sesh's version
+//   kept     there with anything else in it, or not a regular file — the
+//            user's, and never touched
+//   blocked  not there, but its folder is taken by something that is not one
+function inspectPlanning() {
+  const total = Object.keys(planningFiles).length;
+  const inspection = {
+    docsExists: pathTaken(docsTarget),
+    folderExists: false,
+    blocked: null,
+    files: [],
+    ownEntries: 0,
+    total,
+  };
+
+  if (inspection.docsExists && !isDirectory(docsTarget)) {
+    return { ...inspection, blocked: `${docsName} exists but is not a folder` };
+  }
+  if (pathTaken(planningTarget) && !isDirectory(planningTarget)) {
+    return { ...inspection, blocked: `${planningLabel} exists but is not a folder` };
+  }
+
+  inspection.folderExists = isDirectory(planningTarget);
+  inspection.files = Object.keys(planningFiles).map((relativePath) => {
+    const filePath = planningPath(relativePath);
+
+    if (!pathTaken(filePath)) {
+      const parent = path.dirname(filePath);
+      if (pathTaken(parent) && !isDirectory(parent)) {
+        const folder = path.relative(projectRoot, parent).split(path.sep).join("/");
+        return { relativePath, status: "blocked", reason: `${folder} is not a folder` };
+      }
+      return { relativePath, status: "missing" };
+    }
+
+    const content = isRegularFile(filePath) ? readTextOrNull(filePath) : null;
+    return {
+      relativePath,
+      status: sameText(content, planningFiles[relativePath]) ? "current" : "kept",
+    };
+  });
+
+  if (inspection.folderExists) inspection.ownEntries = countOwnPlanningEntries();
+  return inspection;
+}
+
+const planningFilesWith = (inspection, ...statuses) =>
+  inspection.files.filter((file) => statuses.includes(file.status)).map((file) => file.relativePath);
+
+// Something to add, and room to add it. A complete backlog is not offered.
+function canOfferPlanning(inspection) {
+  return !inspection.blocked && planningFilesWith(inspection, "missing").length > 0;
+}
+
+// What the backlog is and exactly where it goes, for the detail box. Plain
+// ASCII prose: the box wraps it by length.
+function describePlanningChoice(inspection) {
+  const what =
+    "A backlog that outlives sessions. README.md is the workflow agents follow, ideas.md " +
+    "holds open ideas and planned work, bugs.md holds unpatched bugs, and archive/ keeps " +
+    `finished items under a dated heading. ${handoffLabel}/ stays the session state.`;
+
+  if (!inspection.docsExists) {
+    return `${what} There is no ${docsName}/ folder yet, so agent-sesh creates it: everything goes in ${planningLabel}/.`;
+  }
+
+  if (!inspection.folderExists) {
+    return (
+      `${what} ${docsName}/ already exists, so planning/ is added inside it: everything goes in ` +
+      `${planningLabel}/. Nothing else in ${docsName}/ is touched.`
+    );
+  }
+
+  const taken = planningFilesWith(inspection, "current", "kept");
+  const yours =
+    taken.length > 0 || inspection.ownEntries > 0
+      ? ` Everything already there${taken.length ? ` (${taken.join(", ")})` : ""} is kept exactly ` +
+        "as it is: never overwritten, moved or archived."
+      : "";
+  return (
+    `${what} ${planningLabel}/ already exists, so only the missing files are added: ` +
+    `${planningFilesWith(inspection, "missing").join(", ")}.${yours}`
+  );
+}
+
+function createFileExclusive(filePath, content) {
+  assertOwnedPath(filePath, "create");
+  // "wx" fails with EEXIST rather than replace anything, a symlink included.
+  fs.writeFileSync(filePath, content, { flag: "wx" });
+}
+
+// Never throws for a planning problem: the brain and the pointers are done by
+// the time this runs, and a backlog that could not be added is a warning, not
+// a failed setup.
+function addPlanningBacklog() {
+  const inspection = inspectPlanning();
+  const result = {
+    inspection,
+    created: [],
+    existing: planningFilesWith(inspection, "current", "kept"),
+    kept: planningFilesWith(inspection, "kept"),
+    skipped: inspection.files
+      .filter((file) => file.status === "blocked")
+      .map((file) => ({ relativePath: file.relativePath, reason: file.reason })),
+    warnings: [],
+    notes: [],
+  };
+
+  if (inspection.blocked) {
+    result.warnings.push(
+      [
+        `${inspection.blocked}, so the planning backlog was not added.`,
+        `It was left exactly as it is. Move it aside and re-run with ${PLANNING_FLAG}.`,
+      ].join("\n"),
+    );
+    return result;
+  }
+
+  for (const relativePath of planningFilesWith(inspection, "missing")) {
+    const filePath = planningPath(relativePath);
+    const parent = relativePath.split("/").slice(0, -1).join("/");
+
+    try {
+      makeDirectory(path.dirname(filePath), `${planningLabel}/${parent ? `${parent}/` : ""}`);
+      createFileExclusive(filePath, planningFiles[relativePath]);
+      result.created.push(relativePath);
+    } catch (err) {
+      if (err.code === "EEXIST") {
+        // Appeared between looking and writing: it is the user's now.
+        result.existing.push(relativePath);
+        result.kept.push(relativePath);
+      } else {
+        result.skipped.push({ relativePath, reason: err.message });
+      }
+    }
+  }
+
+  if (result.skipped.length > 0) {
+    result.warnings.push(
+      [
+        `${result.skipped.length} planning file(s) were not added:`,
+        ...result.skipped.map((file) => `  ${planningLabel}/${file.relativePath} — ${file.reason}`),
+      ].join("\n"),
+    );
+  }
+
+  // Only when files were added beside the user's: that is when "what did it
+  // not write?" is the question. A complete backlog on a re-run says nothing.
+  if (result.created.length > 0 && result.kept.length > 0) {
+    result.notes.push(
+      [
+        `${planningLabel}/ already had ${result.kept.length} of these files. They were kept`,
+        "exactly as they are, and agent-sesh's versions were not written:",
+        ...result.kept.map((relativePath) => `  ${relativePath}`),
+        "The missing files were added beside them. To see agent-sesh's",
+        `versions, run npx agent-sesh ${PLANNING_FLAG} in an empty folder.`,
+      ].join("\n"),
+    );
+  }
+
+  return result;
+}
+
+function getPlanningStatus(result) {
+  if (result.inspection.blocked) return yellow("not added (see below)");
+  const status = getAgentsDirectoryStatus(
+    result.created.length,
+    result.existing.length,
+    result.inspection.total,
+  );
+  return result.skipped.length > 0
+    ? `${status}${yellow(` · ${result.skipped.length} not added`)}`
+    : status;
+}
+
 // ── git hooks ─────────────────────────────────────────────────────
 
 const HOOK_MARKER_START = "# >>> agent-sesh >>>";
@@ -3291,6 +3825,8 @@ function describeWorkspace() {
   const pointers = presentEnvironments().map((env) => env.fileName);
   rows.push(["Pointer", pointers.length ? green(pointers.join(" + ")) : dim("none")]);
 
+  rows.push(["Planning", describePlanningRow(inspectPlanning())]);
+
   rows.push(["Skills", describeSkillsRow(discoverSkills())]);
 
   const agents = detectedAgents().map((agent) => agent.name);
@@ -3310,6 +3846,33 @@ function describeWorkspace() {
   ]);
 
   return alignRows(rows);
+}
+
+// Where the backlog stands, and so where it would go.
+function describePlanningRow(inspection) {
+  if (inspection.blocked) return yellow(inspection.blocked);
+
+  if (!inspection.folderExists) {
+    return dim(
+      inspection.docsExists
+        ? `not set up yet · ${docsName}/ exists`
+        : `not set up yet · no ${docsName}/ folder`,
+    );
+  }
+
+  const present = planningFilesWith(inspection, "current", "kept").length;
+  const own = inspection.ownEntries > 0 ? dim(` · +${inspection.ownEntries} of your own`) : "";
+
+  if (present === 0) {
+    return dim(
+      inspection.ownEntries > 0
+        ? `${planningLabel}/ · ${inspection.ownEntries} file(s) of your own`
+        : `${planningLabel}/ · empty`,
+    );
+  }
+
+  const text = `${planningLabel}/ · ${present === inspection.total ? present : `${present}/${inspection.total}`} files`;
+  return `${present === inspection.total ? green(text) : yellow(text)}${own}`;
 }
 
 function describeSkillsRow({ skills, broken }) {
@@ -3557,61 +4120,113 @@ function selectWithDetails({ message, options, initialValue }) {
   }).prompt();
 }
 
+// Asked once, on a project being set up for the first time, after the
+// environments. Says what the backlog is and exactly where it lands, because
+// this is the one thing agent-sesh writes outside .agents/ and the pointers.
+async function askPlanning(inspection) {
+  const choice = await selectWithDetails({
+    message: `Add a planning backlog in ${planningLabel}/?`,
+    options: [
+      {
+        value: "yes",
+        label: `\u{1F4CB} Yes — add ${planningLabel}/`,
+        details: describePlanningChoice(inspection),
+      },
+      {
+        value: "no",
+        label: `➖ No — leave ${docsName}/ alone`,
+        details:
+          `Nothing is written to ${docsName}/. Add the backlog later with npx agent-sesh ` +
+          `${PLANNING_FLAG}, or choose it from the menu the next time you run agent-sesh.`,
+      },
+    ],
+    initialValue: "yes",
+  });
+
+  return isCancel(choice) ? null : choice === "yes";
+}
+
 // Labels say what the user wants, not how it works. The common case — a new
 // agent-sesh version, or an old layout to bring forward — is "update", and it
 // asks nothing more: the same pointers, brought up to date, content kept.
+// Update never writes to docs/; the planning backlog is its own entry, last so
+// that it never moves the others, and only while there is something to add.
 async function selectAction() {
+  const planning = inspectPlanning();
+
   if (isHandoffPopulated()) {
     const upgrading = hasLegacyLayout();
+    const updateLabel = upgrading ? "Upgrade" : "Update";
+    const options = [
+      {
+        value: "update",
+        label: upgrading ? "⏫ Upgrade to the new layout" : "⏫ Update",
+        details: upgrading
+          ? `Moves your old ${agentsDirName}/*.md files into ${handoffLabel}/ (${memoryDirName}/, ` +
+            `${rulesDirName}/ and ${referencesDirName}/) and keeps everything you wrote: context.md ` +
+            `becomes ${referencesDirName}/overview.md, and a copy of the old layout is saved in ` +
+            `${archiveDirName}/. Your pointer files stay. Asks nothing else.`
+          : `Brings this project up to date with agent-sesh v${VERSION}: missing files are ` +
+            "recreated, templates you never edited and stock pointer files get the current " +
+            "wording, and protection is re-applied. Anything you wrote is kept exactly as it " +
+            "is. Asks nothing else.",
+      },
+      {
+        value: "switch",
+        label: "\u{1F504} Change pointer files",
+        details:
+          `Choose which root files point agents at the brain: ${pointerFileNames[0]} (read by ` +
+          `most agents), ${pointerFileNames.slice(1).join(", ")}. Tick one to add it, untick ` +
+          `one to retire it; a file you customised is backed up first. Everything ` +
+          `${updateLabel} does happens too.`,
+      },
+      {
+        value: "reinit",
+        label: "\u{1F535} Start over",
+        details:
+          `Moves the whole current brain into a dated folder in ${handoffLabel}/${archiveDirName}/ ` +
+          "and starts again from blank templates. Nothing is deleted, but agents stop " +
+          "reading the old content. Your pointer files stay. You are asked to confirm.",
+      },
+    ];
+
+    if (canOfferPlanning(planning)) {
+      options.push({
+        value: "planning",
+        label: "\u{1F4CB} Add a planning backlog",
+        details: `${describePlanningChoice(planning)} Everything ${updateLabel} does happens too.`,
+      });
+    }
+
     const choice = await selectWithDetails({
       message: upgrading
         ? "This project's brain uses an older agent-sesh layout. What do you want to do?"
         : "This project already has a brain. What do you want to do?",
-      options: [
-        {
-          value: "update",
-          label: upgrading ? "⏫ Upgrade to the new layout" : "⏫ Update",
-          details: upgrading
-            ? `Moves your old ${agentsDirName}/*.md files into ${handoffLabel}/ (${memoryDirName}/, ` +
-              `${rulesDirName}/ and ${referencesDirName}/) and keeps everything you wrote: context.md ` +
-              `becomes ${referencesDirName}/overview.md, and a copy of the old layout is saved in ` +
-              `${archiveDirName}/. Your pointer files stay. Asks nothing else.`
-            : `Brings this project up to date with agent-sesh v${VERSION}: missing files are ` +
-              "recreated, templates you never edited and stock pointer files get the current " +
-              "wording, and protection is re-applied. Anything you wrote is kept exactly as it " +
-              "is. Asks nothing else.",
-        },
-        {
-          value: "switch",
-          label: "\u{1F504} Change pointer files",
-          details:
-            `Choose which root files point agents at the brain: ${pointerFileNames[0]} (read by ` +
-            `most agents), ${pointerFileNames.slice(1).join(", ")}. Tick one to add it, untick ` +
-            `one to retire it; a file you customised is backed up first. Everything ` +
-            `${upgrading ? "Upgrade" : "Update"} does happens too.`,
-        },
-        {
-          value: "reinit",
-          label: "\u{1F535} Start over",
-          details:
-            `Moves the whole current brain into a dated folder in ${handoffLabel}/${archiveDirName}/ ` +
-            "and starts again from blank templates. Nothing is deleted, but agents stop " +
-            "reading the old content. Your pointer files stay. You are asked to confirm.",
-        },
-      ],
+      options,
       initialValue: "update",
     });
 
     if (isCancel(choice)) return null;
     if (choice === "reinit") return { action: "reinit" };
 
+    const addPlanning = choice === "planning";
+
     // A brain with no pointer at all has nothing to keep, so it is asked.
     const present = presentEnvironments();
-    if (choice === "update" && present.length > 0) {
-      return { action: "setup", environments: present };
+    if (choice !== "switch" && present.length > 0) {
+      return { action: "setup", environments: present, planning: addPlanning };
     }
+
+    const environments = await chooseEnvironments(
+      present.length
+        ? "Which environments should have a pointer file?"
+        : "Which environments do you want to set up?",
+    );
+    if (environments === null) return null;
+    return { action: "setup", environments, planning: addPlanning };
   }
 
+  // A project being set up for the first time.
   const environments = await chooseEnvironments(
     presentEnvironments().length
       ? "Which environments should have a pointer file?"
@@ -3619,7 +4234,13 @@ async function selectAction() {
   );
   if (environments === null) return null;
 
-  return { action: "setup", environments };
+  let addPlanning = false;
+  if (canOfferPlanning(planning)) {
+    addPlanning = await askPlanning(planning);
+    if (addPlanning === null) return null;
+  }
+
+  return { action: "setup", environments, planning: addPlanning };
 }
 
 async function confirmReinit() {
@@ -3642,7 +4263,7 @@ function bail(message) {
 // Each line has to fit the note box on its own. clack wraps on width but does
 // not indent the continuation, so an overlong step folds back to the left
 // margin and stops reading as a numbered list. Keep every line short.
-function nextSteps(fileNames) {
+function nextSteps(fileNames, { planning = false } = {}) {
   const tags = fileNames.map((name) => `@${name}`);
   const others = tags.slice(1);
   const alternatives =
@@ -3657,6 +4278,9 @@ function nextSteps(fileNames) {
     `${cyan("2")}  Fill in ${bold(`${handoffLabel}/${referencesDirName}/overview.md`)}`,
     `${cyan("3")}  Keep ${bold(`${handoffLabel}/${memoryDirName}/`)} current as you work`,
     `${cyan("4")}  Ask the AI to update ${bold(`${handoffLabel}/`)} before you finish`,
+    ...(planning
+      ? [`${cyan("5")}  Track open ideas and bugs in ${bold(`${planningLabel}/`)}`]
+      : []),
   ].join("\n");
 }
 
@@ -3712,6 +4336,12 @@ const HELP_TEXT = [
     return `  ${env.flag.padEnd(15)} ${detail}`;
   }),
   "",
+  `${bold("Planning")}  ${grey("combines with the flags above")}`,
+  `  ${PLANNING_FLAG.padEnd(15)} Also add a planning backlog in ${planningLabel}/: README.md (the`,
+  "                  workflow agents follow), ideas.md, bugs.md and archive/. Creates",
+  `                  ${docsName}/ if it is missing. Only adds files: anything already there`,
+  "                  is kept as it is. On its own, keeps the pointer files you have.",
+  "",
   bold("Other"),
   "  --agents        List every supported agent and the pointer file it reads",
   "  -v, --version   Print the version and exit",
@@ -3739,7 +4369,7 @@ async function main() {
     return;
   }
 
-  const knownFlags = pointerEnvironments.map((env) => env.flag);
+  const knownFlags = [...pointerEnvironments.map((env) => env.flag), PLANNING_FLAG];
   const unknown = args.filter((arg) => !knownFlags.includes(arg));
 
   if (unknown.length > 0) {
@@ -3751,12 +4381,14 @@ async function main() {
   }
 
   const flagged = pointerEnvironments.filter((env) => args.includes(env.flag));
+  const planningFlagged = args.includes(PLANNING_FLAG);
 
   // isTTY is a predicate taking a stream, not a boolean. Treating it as a
   // boolean made this check dead code, so a non-interactive run rendered a
   // prompt into a stream nobody was reading, created nothing, and exited 0.
+  // Any flag, --planning included, means no prompts.
   const hasTTY = isTTY(process.stdin) && isTTY(process.stdout);
-  interactive = flagged.length === 0 && hasTTY;
+  interactive = args.length === 0 && hasTTY;
 
   const tag = grey(`[agent-sesh v${VERSION}]`);
   const describeEnvironments = (envs) =>
@@ -3764,10 +4396,25 @@ async function main() {
 
   let selected = null;
   let reinit = false;
+  // Decided here, and nowhere else: a run writes to docs/ only when it was
+  // asked to, by the flag or by an answer.
+  let wantPlanning = planningFlagged;
+  const andPlanning = ` and a planning backlog in ${planningLabel}/`;
 
   if (flagged.length > 0) {
     selected = flagged;
-    console.log(`${tag} Setting up ${describeEnvironments(selected)}…`);
+    console.log(`${tag} Setting up ${describeEnvironments(selected)}${planningFlagged ? andPlanning : ""}…`);
+  } else if (planningFlagged) {
+    // --planning on its own says nothing about pointers, so the ones already
+    // here stay as they are. The no-flag default would retire every pointer
+    // but AGENTS.md, which is no part of adding a backlog.
+    const present = presentEnvironments();
+    selected = present.length ? present : [defaultEnvironment];
+    console.log(
+      present.length
+        ? `${tag} Adding a planning backlog in ${planningLabel}/, keeping ${describeEnvironments(selected)}…`
+        : `${tag} Setting up ${describeEnvironments(selected)}${andPlanning}…`,
+    );
   } else if (!hasTTY) {
     selected = [defaultEnvironment];
     const otherFlags = pointerEnvironments.slice(1).map((env) => env.flag);
@@ -3781,7 +4428,10 @@ async function main() {
     const choice = await selectAction();
     if (choice === null) bail("Cancelled.");
     if (choice.action === "reinit") reinit = true;
-    else selected = choice.environments;
+    else {
+      selected = choice.environments;
+      wantPlanning = choice.planning;
+    }
   }
 
   const warnings = [];
@@ -3835,6 +4485,7 @@ async function main() {
   let protection;
   let hooks;
   let migration = archivedBrain ? archivedBrain.migration : null;
+  let planning = null;
 
   try {
     // Both writes happen here, after every question has been asked. The reinit
@@ -3854,6 +4505,14 @@ async function main() {
       ensureBackupReadme();
     }
 
+    // After the brain and the pointers, so a backlog that cannot be added
+    // never stands in the way of the rest. The guard opens docs/planning/ for
+    // this run only.
+    if (wantPlanning) {
+      planningInScope = true;
+      planning = addPlanningBacklog();
+    }
+
     hooks = installGitHooks();
   } catch (err) {
     if (progress) progress.stop("Setup failed", 1);
@@ -3865,6 +4524,11 @@ async function main() {
   if (repositoryWarning) warnings.push(repositoryWarning);
   warnings.push(...hooks.warnings);
   infoNotes.push(...hooks.notes);
+
+  if (planning) {
+    infoNotes.push(...planning.notes);
+    warnings.push(...planning.warnings);
+  }
 
   const fileNames = selected.map((env) => env.fileName);
 
@@ -3894,6 +4558,7 @@ async function main() {
 
   const summaryRows = [
     [`${handoffLabel}/`, getAgentsDirectoryStatus(created, existing, total, updated)],
+    ...(planning ? [[`${planningLabel}/`, getPlanningStatus(planning)]] : []),
     ...pointers.results.map(({ env, status }) => [env.fileName, getAgentsFileStatus(status)]),
     [
       "protection",
@@ -4014,7 +4679,10 @@ async function main() {
       guidedLog(message, "warn");
     }
 
-    section(nextSteps(fileNames), "Next steps");
+    section(
+      nextSteps(fileNames, { planning: Boolean(planning && !planning.inspection.blocked) }),
+      "Next steps",
+    );
     guidedOutro(`${green("Done")} — ${pointerSummary}`);
   } else {
     console.log(`${tag} Project brain ready ✅`);
@@ -4058,5 +4726,7 @@ if (require.main === module) {
     handoffFileNotice,
     legacyHandoffReadmes,
     legacyArchiveReadme,
+    planningFiles,
+    planningLabel,
   };
 }

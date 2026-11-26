@@ -34,9 +34,9 @@ function seedEveryFolder(dir) {
 }
 
 describe("registry", () => {
-  test("mirrors skills: 79 entries, 54 distinct project skills folders", () => {
+  test("mirrors skills: 79 entries, 53 distinct project skills folders", () => {
     assert.equal(h.cli.agentRegistry.length, 79);
-    assert.equal(folders.length, 54);
+    assert.equal(folders.length, 53);
     assert.equal(folders[0], ".agents/skills");
     for (const agent of h.cli.agentRegistry) {
       assert.match(agent.id, /^[a-z0-9-]+$/);
@@ -194,7 +194,7 @@ describe("skills awareness", () => {
     h.fixtureSkill(dir, ".claude/skills", "grill-me", { link: ".agents/skills" });
     h.linkDir(path.join(dir, ".claude", "skills", "gone"), path.join(dir, ".agents", "skills", "gone"));
 
-    const result = h.pty(dir, "wait:Which environments;send:enter;wait:Done");
+    const result = h.pty(dir, "wait:Which environments;send:enter;wait:Add a planning backlog;send:down;send:enter;wait:Done");
     assert.equal(result.exit, 0, result.out);
     assert.match(result.out, /Skills\s+1 installed · grill-me · 1 broken link/);
     assert.match(result.out, /skills\s+1 preserved/);
