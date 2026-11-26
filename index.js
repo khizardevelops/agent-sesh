@@ -107,7 +107,7 @@ const planningPath = (relativePath) => path.join(planningTarget, ...relativePath
 
 // ── agent ecosystem registry ──────────────────────────────────────
 //
-// Mirrors the agent table in vercel-labs/skills (src/agents.ts, v1.7.0): the
+// Mirrors the agent table in vercel-labs/skills (src/agents.ts, v1.9.0): the
 // same 79 entries, the same project skills folders, the same install markers.
 // `npm run check:registry` diffs this list against upstream main.
 //
@@ -149,7 +149,7 @@ const agentRegistry = [
   { id: "eve", name: "Eve", skillsDir: "agent/skills", detect: ["pkg:eve"] },
   { id: "firebender", name: "Firebender", skillsDir: ".agents/skills", detect: ["~/.firebender"] },
   { id: "forgecode", name: "ForgeCode", skillsDir: ".forge/skills", detect: ["~/.forge"] },
-  { id: "fx", name: "fx", skillsDir: ".fx/skills", detect: ["~/.fx"] },
+  { id: "fx", name: "fx", skillsDir: ".agents/skills", detect: ["~/.fx"] },
   { id: "gemini-cli", name: "Gemini CLI", skillsDir: ".agents/skills", detect: ["~/.gemini"], pointer: "gemini" },
   { id: "github-copilot", name: "GitHub Copilot", skillsDir: ".agents/skills", detect: ["~/.copilot"] },
   { id: "goose", name: "Goose", skillsDir: ".goose/skills", detect: ["config/goose"] },

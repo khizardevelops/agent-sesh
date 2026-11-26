@@ -356,7 +356,7 @@ What agent-sesh guarantees about skills — every line of this is a test in `tes
 
 - **Nothing skills writes is ever touched.** Not the canonical copy in
   `.agents/skills/`, not the per-agent symlinks skills creates (`.claude/skills/…`,
-  `.windsurf/skills/…` and the rest of the 54 folders in the registry), not a
+  `.windsurf/skills/…` and the rest of the 53 folders in the registry), not a
   `--copy` install, not `skills-lock.json`. This holds through setup, switching,
   reinitialising and the upgrade migration, and it is enforced at runtime: every
   write agent-sesh makes goes through one guard that refuses any path outside
@@ -560,7 +560,7 @@ without a file of its own.
 | Eve | `agent/skills/` | Roo Code | `.roo/skills/` |
 | Firebender | `.agents/skills/` | Rovo Dev | `.rovodev/skills/` |
 | ForgeCode | `.forge/skills/` | Sarvam Code | `.agents/skills/` |
-| fx | `.fx/skills/` | Tabnine CLI | `.tabnine/agent/skills/` |
+| fx | `.agents/skills/` | Tabnine CLI | `.tabnine/agent/skills/` |
 | GitHub Copilot | `.agents/skills/` | Terramind | `.terramind/skills/` |
 | Goose | `.goose/skills/` | Tinycloud | `.tinycloud/skills/` |
 | Grok Build | `.grok/skills/` | Trae | `.trae/skills/` |

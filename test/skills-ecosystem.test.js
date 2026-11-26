@@ -34,9 +34,9 @@ function seedEveryFolder(dir) {
 }
 
 describe("registry", () => {
-  test("mirrors skills: 79 entries, 54 distinct project skills folders", () => {
+  test("mirrors skills: 79 entries, 53 distinct project skills folders", () => {
     assert.equal(h.cli.agentRegistry.length, 79);
-    assert.equal(folders.length, 54);
+    assert.equal(folders.length, 53);
     assert.equal(folders[0], ".agents/skills");
     for (const agent of h.cli.agentRegistry) {
       assert.match(agent.id, /^[a-z0-9-]+$/);
