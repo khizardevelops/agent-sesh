@@ -179,6 +179,9 @@ npx agent-sesh --qwen             # Qwen Code — QWEN.md
 npx agent-sesh --iflow            # iFlow CLI — IFLOW.md
 npx agent-sesh --uni --claude     # both, in one run
 
+npx agent-sesh --planning         # also add a planning backlog in docs/planning/
+npx agent-sesh --claude --planning
+
 npx agent-sesh --agents           # every supported agent and the file it reads
 npx agent-sesh --version          # Print the version
 npx agent-sesh --help             # Show all options
@@ -197,6 +200,7 @@ your machine — and what it changed:
 │  Location   ~/code/my-app
 │  Brain      not set up yet
 │  Pointer    none
+│  Planning   not set up yet · docs/ exists
 │  Skills     1 installed · grill-me
 │  Agents     Claude Code, Codex, Gemini CLI, OpenCode detected
 │  Git        repository detected
@@ -210,11 +214,25 @@ your machine — and what it changed:
 │  ◻ 🟣 Qwen Code — QWEN.md
 │  ◻ ⚪ iFlow CLI — IFLOW.md
 │
+◆  Add a planning backlog in docs/planning/?
+│  ┌ 📋 Yes — add docs/planning/
+│  │ A backlog that outlives sessions. README.md is the workflow agents follow,
+│  │ ideas.md holds open ideas and planned work, bugs.md holds unpatched bugs,
+│  │ and archive/ keeps finished items under a dated heading. .agents/handoff/
+│  │ stays the session state. docs/ already exists, so planning/ is added
+│  │ inside it: everything goes in docs/planning/. Nothing else in docs/ is
+│  │ touched.
+│  └
+│
+│  ● 📋 Yes — add docs/planning/
+│  ○ ➖ No — leave docs/ alone
+│
 ◇  Project brain ready in .agents/handoff/
 │
 ◇  Summary
 │
 │  .agents/handoff/   15 files created
+│  docs/planning/     5 files created
 │  AGENTS.md          created
 │  protection         read-only
 │  git hooks          post-merge, post-checkout
@@ -228,6 +246,7 @@ your machine — and what it changed:
 │  2  Fill in .agents/handoff/references/overview.md
 │  3  Keep .agents/handoff/memory/ current as you work
 │  4  Ask the AI to update .agents/handoff/ before you finish
+│  5  Track open ideas and bugs in docs/planning/
 │
 ┣━━━━━━━━━━━━━━──────────╌╌╌╌┄┄
 │
@@ -235,8 +254,8 @@ your machine — and what it changed:
 ```
 
 Re-running is always safe. When a project is already set up, the first question
-offers three things, with a box above them that explains in full whichever one
-the cursor is on:
+offers three things — four while a planning backlog could still be added — with a
+box above them that explains in full whichever one the cursor is on:
 
 - **⏫ Update** (the default — just press Enter) keeps your content and your
   pointer files and brings them up to date with this version. On a project still
@@ -246,6 +265,9 @@ the cursor is on:
 - **🔄 Change pointer files** re-opens the checklist with the pointer files you
   already have ticked: tick one more to add it, untick one to retire it.
 - **🔵 Start over** archives the brain and begins again from blank templates.
+- **📋 Add a planning backlog** (listed last, and only while `docs/planning/` is
+  missing one of its files) does everything Update does, and adds the
+  [planning backlog](#-planning-backlog-optional).
 
 Choosing **Start over** moves the active project brain into a dated
 `.agents/handoff/archive/<timestamp>/` snapshot, including a manifest, then
@@ -271,6 +293,13 @@ non-interactive terminals, the same information prints as plain text.
 project/
 ├── AGENTS.md                 ← one pointer file per environment you tick
 ├── CLAUDE.md                 ← (CLAUDE.md, GEMINI.md, QWEN.md, IFLOW.md)
+├── docs/planning/            ← optional: the planning backlog (see below)
+│   ├── README.md
+│   ├── ideas.md
+│   ├── bugs.md
+│   └── archive/
+│       ├── ideas.md
+│       └── bugs.md
 └── .agents/
     ├── handoff/              ← everything agent-sesh owns
     │   ├── README.md
@@ -331,7 +360,8 @@ What agent-sesh guarantees about skills — every line of this is a test in `tes
   `--copy` install, not `skills-lock.json`. This holds through setup, switching,
   reinitialising and the upgrade migration, and it is enforced at runtime: every
   write agent-sesh makes goes through one guard that refuses any path outside
-  `.agents/handoff/`, the pointer files and the git hooks folder.
+  `.agents/handoff/`, the pointer files and the git hooks folder — plus
+  `docs/planning/`, only in a run that asked for the planning backlog.
 - **It sees what is installed.** The Workspace note lists the skills found (and
   flags a dangling symlink), the Summary reports them preserved, and the handoff
   README and the pointer tell the agent that `.agents/skills/` holds on-demand
@@ -382,6 +412,49 @@ lose your writing:
 - A pointer that **predates agent-sesh** — a hand-written `AGENTS.md` that never mentions the brain — is backed up to `.agents/handoff/old_agent_files/` and replaced. The summary names the backup, so you can fold what matters into `.agents/handoff/`.
 
 Retiring a customised pointer whose content differs from the one you keep is reported, and its bytes are in the backup folder. Running the same command twice changes nothing. If a pointer file can't be read at all, agent-sesh stops with an error instead of guessing.
+
+---
+
+## 📋 Planning backlog (optional)
+
+`.agents/handoff/` is session state: what is true now, what is next, what just
+happened. A project also needs a **backlog** that outlives sessions — the ideas
+nobody has started and the bugs nobody has fixed. agent-sesh can add one in
+`docs/planning/`:
+
+| File | Holds |
+| --- | --- |
+| `README.md` | The workflow agents follow: read the backlog before proposing work, keep the active files to what is still open, move finished items into `archive/` under a dated heading |
+| `ideas.md` | Open ideas and planned work, in **Product**, **Technical** and **UI** sections |
+| `bugs.md` | Unpatched bugs, written for people; root causes go in `.agents/handoff/references/bugs.md` |
+| `archive/ideas.md`, `archive/bugs.md` | Frozen history of shipped, rejected and fixed items, newest batch first |
+
+The handoff README tells agents to read the backlog before they start work, so you
+don't have to.
+
+**It is only added when you ask.** Answer Yes to the question on a new project,
+pick **📋 Add a planning backlog** from the menu, or pass `--planning`. Update,
+Change pointer files and Start over never write to `docs/`, and Start over never
+archives the backlog: it is yours, not part of the brain. `--planning` on its own
+keeps the pointer files you already have.
+
+**It only ever adds.** Each file is created with an exclusive create, so a name
+that is already taken is never written to, whatever it holds. Nothing in `docs/`
+is moved, renamed, archived, made read-only or deleted.
+
+| What your project has | What agent-sesh does |
+| --- | --- |
+| No `docs/` folder | Creates `docs/planning/` with all five files |
+| `docs/` with your own documents | Adds `planning/` inside it; nothing else in `docs/` is touched |
+| An empty `docs/planning/`, or one holding other files | Adds the five files beside what is there |
+| `docs/planning/` with your own `README.md`, `ideas.md`… | Keeps every file of yours byte for byte, adds only the missing names, and lists the ones it did not write |
+| All five names already taken | Writes nothing, and does not offer it |
+| A file called `docs` (or `docs/planning`) | Leaves it alone, warns, and finishes the rest of the setup |
+| A `Docs/` folder | Uses it, rather than creating a second `docs/` beside it |
+
+Before you are asked anything, the Workspace note shows where the backlog stands
+(`not set up yet · docs/ exists`, `docs/planning/ · 2/5 files · +3 of your own`),
+and the question's box says exactly where the files will go.
 
 ---
 
